@@ -63,7 +63,7 @@ func main() {
 
 	srv.Use(func(ctx context.Context) error {
 		fullMethod := middleware.GetFullMethodFrom(ctx)
-		fmt.Println("method name", utils.PathBase(fullMethod))
+
 		if utils.PathBase(fullMethod) == "SayHelloAgain" {
 			return status.Error(codes.Aborted, "Don't say good things a second time")
 		}
