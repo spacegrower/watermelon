@@ -13,10 +13,10 @@ type Middleware func(context.Context) error
 
 // SetInto a function to save the value into watermelon context
 func SetInto(c context.Context, key, val any) {
-	if ctx, ok := c.(*wctx.Context); ok {
+	if ctx, ok := c.Value(definition.ContextKey{}).(*wctx.Context); ok {
 		ctx.Set(key, val)
 	} else {
-		wlog.Panic("middleware: context is not expected")
+		wlog.Panic("middleware: not found github.com/spacegrower/watermelon/infra/internal/context.Context from the given context")
 	}
 }
 
@@ -29,10 +29,9 @@ func GetFrom(c context.Context, key any) any {
 // avoid using the same instance(context) for concurrent scenarios
 func Next(ctx context.Context) error {
 	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(Router)
-	if ok {
-		// if !currentRouter.Next().IsNil() {
+
+	if ok && !currentRouter.Next().IsNil() {
 		return currentRouter.Next().Deep(ctx)
-		// }
 	}
 	return nil
 }

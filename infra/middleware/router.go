@@ -47,6 +47,7 @@ func (r *router) Deep(ctx context.Context) error {
 	if err := r.handler(ctx); err != nil {
 		return err
 	}
+
 	if r.Next().IsNil() || GetFrom(ctx, definition.RouterIndex{}).(int) == r.index {
 		return r.next.Deep(ctx)
 	}

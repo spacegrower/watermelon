@@ -67,12 +67,16 @@ func Test_Server(t *testing.T) {
 		str += "3"
 		return nil
 	}, func(ctx context.Context) error {
+		middleware.SetInto(ctx, "verify", "123456")
 		str += "4"
 		return nil
 	})
 
 	var testFunc grpc.UnaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
 		str += "test"
+		if middleware.GetFrom(ctx, "verify").(string) != "123456" {
+			t.Fatal("bad middleware")
+		}
 		return nil, nil
 	}
 
