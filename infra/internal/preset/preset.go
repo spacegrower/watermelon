@@ -15,6 +15,11 @@ func SetUnaryHandlerInto(ctx context.Context, handler grpc.UnaryHandler) {
 	middleware.SetInto(ctx, definition.UnaryHandlerKey{}, handler)
 }
 
+// SetStreamHandlerInto a function to save the grpc stream handler into watermelon context
+func SetStreamHandlerInto(ctx context.Context, handle func() error) {
+	middleware.SetInto(ctx, definition.StreamHandlerKey{}, handle)
+}
+
 // SetRequestInto a function to save the grpc request body into watermelon context
 func SetRequestInto(ctx context.Context, req any) {
 	middleware.SetInto(ctx, definition.RequestKey{}, req)

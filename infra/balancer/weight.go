@@ -54,10 +54,10 @@ func (b *weightRobinBalancer) Build(info base.PickerBuildInfo) balancer.Picker {
 		}
 
 		for _, v := range meta.Methods {
-			fullMethodName := utils.PathJoin(meta.ServiceName, v)
+			fullMethodName := utils.PathJoin(meta.ServiceName, v.Name)
 			if _, exist := p.store[fullMethodName]; !exist {
 				p.store[fullMethodName] = &weightNodeStore{
-					Method: v,
+					Method: v.Name,
 				}
 			}
 			p.store[fullMethodName].Count += 1

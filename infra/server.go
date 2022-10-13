@@ -14,7 +14,7 @@ import (
 
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
-	wmctx "github.com/spacegrower/watermelon/infra/internal/context"
+	wctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register"
@@ -56,7 +56,7 @@ func (s *server) interceptor() grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (resp interface{}, err error) {
 
-		c := wmctx.Wrap(ctx)
+		c := wctx.Wrap(ctx)
 
 		preset.SetFullMethodInto(c, info.FullMethod)
 		preset.SetRequestInto(c, req)
@@ -72,6 +72,40 @@ func (s *server) interceptor() grpc.UnaryServerInterceptor {
 			return middleware.GetResponseFrom(c), nil
 		}
 		return handler(c, req)
+	}
+}
+
+type fakeServerStream struct {
+	ctx context.Context
+	grpc.ServerStream
+}
+
+func (s *fakeServerStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		c := wctx.Wrap(ss.Context())
+
+		preset.SetFullMethodInto(c, info.FullMethod)
+		preset.SetGrpcRequestTypeInto(c, definition.UnaryRequest)
+		preset.SetStreamHandlerInto(c, func() error {
+			return handler(srv, &fakeServerStream{
+				ctx:          c,
+				ServerStream: ss,
+			})
+		})
+
+		method := utils.PathBase(info.FullMethod)
+
+		if router, exist := s.routers[method]; exist {
+			if err := router.Deep(c); err != nil {
+				return err
+			}
+			return nil
+		}
+		return handler(srv, ss)
 	}
 }
 
@@ -128,7 +162,9 @@ func NewServer(register func(srv *grpc.Server), opts ...Option) *server {
 		s.Unlock()
 	})
 
-	baseGrpcServerOptions := []grpc.ServerOption{grpc.UnaryInterceptor(s.interceptor())}
+	baseGrpcServerOptions := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(s.interceptor()),
+		grpc.ChainStreamInterceptor(s.streamInterceptor())}
 	s.grpcServerOptions = append(baseGrpcServerOptions, s.grpcServerOptions...)
 
 	for _, opt := range opts {

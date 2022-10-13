@@ -62,14 +62,13 @@ func handler(ctx context.Context) error {
 	switch GetGrpcRequestTypeFrom(ctx) {
 	case cst.UnaryRequest:
 		resp, err = GetUnaryHandlerFrom(ctx)(ctx, GetRequestFrom(ctx))
+		SetInto(ctx, definition.ResponseKey{}, resp)
 	case cst.StreamRequest:
-		// todo stream
-		panic("unsupport stream handler")
+		err = GetStreamHandlerFrom(ctx)()
 	}
 	if err != nil {
 		return err
 	}
-	SetInto(ctx, definition.ResponseKey{}, resp)
 	return nil
 }
 

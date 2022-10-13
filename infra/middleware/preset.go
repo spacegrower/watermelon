@@ -24,9 +24,14 @@ func GetResponseFrom(ctx context.Context) any {
 	return GetFrom(ctx, definition.ResponseKey{})
 }
 
-// getRequestFrom a function to return grpc unary handler
+// GetUnaryHandlerFrom a function to return grpc unary handler
 func GetUnaryHandlerFrom(ctx context.Context) grpc.UnaryHandler {
 	return GetFrom(ctx, definition.UnaryHandlerKey{}).(grpc.UnaryHandler)
+}
+
+// GetStreamHandlerFrom a function to return grpc stream handler
+func GetStreamHandlerFrom(ctx context.Context) func() error {
+	return GetFrom(ctx, definition.StreamHandlerKey{}).(func() error)
 }
 
 // GetGrpcRequestTypeFrom a function to return grpc request type

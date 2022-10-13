@@ -21,10 +21,19 @@ type NodeMeta struct {
 	Port         int               `json:"port"`
 	Weight       int               `json:"weight"`
 	Tags         map[string]string `json:"tags"`
-	Methods      []string          `json:"methods"`
+	Methods      []GrpcMethodInfo  `json:"methods"`
 	Runtime      string            `json:"runtime"`
 	Version      string            `json:"version"`
 	RegisterTime int64             `json:"register_time"`
+}
+
+type GrpcMethodInfo struct {
+	// Name is the method name only, without the service name or package name.
+	Name string `json:"name"`
+	// IsClientStream indicates whether the RPC is a client streaming RPC.
+	IsClientStream bool `json:"is_client_stream"`
+	// IsServerStream indicates whether the RPC is a server streaming RPC.
+	IsServerStream bool `json:"is_server_stream"`
 }
 
 func (n NodeMeta) ToJson() string {

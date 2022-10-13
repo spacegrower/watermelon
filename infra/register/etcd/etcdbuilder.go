@@ -75,7 +75,11 @@ func (s *kvstore) Init(server *grpc.Server, region, namespace, host string, port
 	for name, methods := range server.GetServiceInfo() {
 		meta.ServiceName = name
 		for _, v := range methods.Methods {
-			meta.Methods = append(meta.Methods, v.Name)
+			meta.Methods = append(meta.Methods, register.GrpcMethodInfo{
+				Name:           v.Name,
+				IsClientStream: v.IsClientStream,
+				IsServerStream: v.IsServerStream,
+			})
 		}
 	}
 
@@ -86,10 +90,13 @@ func (s *kvstore) Init(server *grpc.Server, region, namespace, host string, port
 func (s *kvstore) Register() error {
 	leaseID, err := s.register()
 	if err != nil {
+		s.log.Error("failed to register server", zap.Error(err))
 		return err
 	}
 
 	if err = s.keepAlive(leaseID); err != nil {
+		s.log.Error("failed to keep alive register lease", zap.Error(err),
+			zap.Int64("lease_id", int64(leaseID)))
 		return err
 	}
 
@@ -110,14 +117,16 @@ func (s *kvstore) register() (clientv3.LeaseID, error) {
 
 	lease := resp.ID
 	registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
-	_, err = s.client.Put(s.client.Ctx(), registerKey, s.meta.ToJson(), clientv3.WithLease(lease))
+	if _, err = s.client.Put(s.client.Ctx(), registerKey, s.meta.ToJson(), clientv3.WithLease(lease)); err != nil {
+		return clientv3.NoLease, err
+	}
 
 	s.log.Info("service registered successful",
 		zap.String("namespace", s.meta.Namespace),
 		zap.String("name", s.meta.ServiceName),
 		zap.String("address", fmt.Sprintf("%s:%d", s.meta.Host, s.meta.Port)))
 
-	return lease, err
+	return lease, nil
 }
 
 func (s *kvstore) deRegister() error {
