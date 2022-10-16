@@ -123,12 +123,11 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 
 			if attr.Region != r.region {
 				proxy := manager.ResolveProxy(attr.Region)
-				if proxy != "" {
-					addr.Addr = proxy
-					return true
+				if proxy == "" {
+					return false
 				}
 
-				return false
+				addr.Addr = proxy
 			}
 			return true
 
