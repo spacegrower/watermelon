@@ -228,6 +228,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 		_ = s.grpcServer.Serve(grpcListener)
 	}()
 
+	time.Sleep(time.Millisecond * 100)
 	if err = s.registerServer(addr); err != nil {
 		panic(err)
 	}

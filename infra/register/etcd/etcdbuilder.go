@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	liveTime        int64 = 10
+	liveTime        int64 = 5
 	ETCD_KEY_PREFIX       = "/watermelon/service"
 )
 
@@ -40,20 +40,33 @@ type kvstore struct {
 	client     *clientv3.Client
 	meta       *register.NodeMeta
 	log        wlog.Logger
+	leaseID    clientv3.LeaseID
 }
 
 func MustSetupEtcdRegister() register.ServiceRegister {
-	ctx, cancel := context.WithCancel(context.Background())
+	client := manager.MustResolveEtcdClient()
+	ctx, cancel := context.WithCancel(client.Ctx())
 	return &kvstore{
 		ctx:        ctx,
 		cancelFunc: cancel,
-		client:     manager.MustResolveEtcdClient(),
+		client:     client,
 		log:        wlog.With(zap.String("component", "etcd-register")),
 	}
 }
 
-func (s *kvstore) Init(serviceName string, methods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error {
+func (s *kvstore) Init(serviceName string, grpcMethods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error {
+	var methods []register.GrpcMethodInfo
+	for _, v := range grpcMethods {
+		methods = append(methods, register.GrpcMethodInfo{
+			Name:           v.Name,
+			IsClientStream: v.IsClientStream,
+			IsServerStream: v.IsServerStream,
+		})
+	}
+
 	meta := &register.NodeMeta{
+		ServiceName:  serviceName,
+		Methods:      methods,
 		Region:       region,
 		Namespace:    namespace,
 		Host:         host,
@@ -72,44 +85,47 @@ func (s *kvstore) Init(serviceName string, methods []grpc.MethodInfo, region, na
 		return res, nil
 	})
 
-	
-
 	s.meta = meta
 	return nil
 }
 
 func (s *kvstore) Register() error {
-	leaseID, err := s.register()
-	if err != nil {
+	s.log.Debug("start register")
+	var err error
+	if err = s.register(); err != nil {
 		s.log.Error("failed to register server", zap.Error(err))
 		return err
 	}
 
-	if err = s.keepAlive(leaseID); err != nil {
+	if err = s.keepAlive(s.leaseID); err != nil {
 		s.log.Error("failed to keep alive register lease", zap.Error(err),
-			zap.Int64("lease_id", int64(leaseID)))
+			zap.Int64("lease_id", int64(s.leaseID)))
 		return err
 	}
 
 	s.once.Do(func() {
 		graceful.RegisterShutDownHandlers(func() {
-			s.deRegister()
+			s.client.Close()
 		})
 	})
 
 	return nil
 }
 
-func (s *kvstore) register() (clientv3.LeaseID, error) {
-	resp, err := s.client.Grant(s.client.Ctx(), liveTime)
-	if err != nil {
-		return clientv3.NoLease, err
-	}
+func (s *kvstore) register() error {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	defer cancel()
+	if s.leaseID == clientv3.NoLease {
+		resp, err := s.client.Grant(ctx, liveTime)
+		if err != nil {
+			return err
+		}
 
-	lease := resp.ID
+		s.leaseID = resp.ID
+	}
 	registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
-	if _, err = s.client.Put(s.client.Ctx(), registerKey, s.meta.ToJson(), clientv3.WithLease(lease)); err != nil {
-		return clientv3.NoLease, err
+	if _, err := s.client.Put(ctx, registerKey, s.meta.ToJson(), clientv3.WithLease(s.leaseID)); err != nil {
+		return err
 	}
 
 	s.log.Info("service registered successful",
@@ -117,12 +133,20 @@ func (s *kvstore) register() (clientv3.LeaseID, error) {
 		zap.String("name", s.meta.ServiceName),
 		zap.String("address", fmt.Sprintf("%s:%d", s.meta.Host, s.meta.Port)))
 
-	return lease, nil
+	return nil
 }
 
-func (s *kvstore) deRegister() error {
+func (s *kvstore) DeRegister() error {
+	if s.leaseID != clientv3.NoLease {
+		return s.revoke(s.leaseID)
+	}
+	return nil
+}
+
+func (s *kvstore) Close() {
+	// just close kvstore not etcd client
+	s.DeRegister()
 	s.cancelFunc()
-	return s.client.Close()
 }
 
 func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
@@ -137,16 +161,11 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 			case _, ok := <-ch:
 				if !ok {
 					s.revoke(leaseID)
-
-					time.Sleep(time.Millisecond * 100)
-
-					if err := s.Register(); err != nil {
-						wlog.Error("failed to re-register", zap.Error(err))
-					}
+					s.reRegister()
 					return
 				}
 			case <-s.ctx.Done():
-				s.revoke(leaseID)
+				s.log.Info("context done")
 				return
 			}
 		}
@@ -155,10 +174,30 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 	return nil
 }
 
+func (s *kvstore) reRegister() {
+	s.leaseID = clientv3.NoLease
+	for {
+		select {
+		case <-s.ctx.Done():
+		default:
+			if err := s.Register(); err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+		}
+
+		return
+	}
+}
+
 func (s *kvstore) revoke(leaseID clientv3.LeaseID) error {
-	if _, err := s.client.Revoke(s.client.Ctx(), leaseID); err != nil {
+	s.log.Info("revoke lease", zap.Int64("lease", int64(leaseID)))
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	defer cancel()
+	if _, err := s.client.Revoke(ctx, leaseID); err != nil {
 		return err
 	}
+	s.leaseID = clientv3.NoLease
 
 	return nil
 }
