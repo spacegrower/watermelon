@@ -14,3 +14,7 @@ func RegisterEtcdClient(etcdConfig clientv3.Config) error {
 	manager.RegisterEtcdClient(client)
 	return nil
 }
+
+func RegisterRegionProxy(region, proxy string) {
+	manager.RegisterProxy(region, proxy)
+}

@@ -116,11 +116,22 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 			if r.serviceConfig, err = parseServiceConfig(v.Value); err != nil {
 				return nil, err
 			}
-		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr register.NodeMeta) bool {
+		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr register.NodeMeta, addr *resolver.Address) bool {
 			if r.region == "" {
 				return true
 			}
-			return attr.Region == r.region
+
+			if attr.Region != r.region {
+				proxy := manager.ResolveProxy(attr.Region)
+				if proxy != "" {
+					addr.Addr = proxy
+					return true
+				}
+
+				return false
+			}
+			return true
+
 		}); err != nil {
 			if err != filterError {
 				r.log.Error("parse node info with error", zap.Error(err))
@@ -147,14 +158,14 @@ func parseServiceConfig(val []byte) (*wresolver.CustomizeServiceConfig, error) {
 
 var filterError = errors.New("filter")
 
-func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta) bool) (resolver.Address, error) {
+func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta, addr *resolver.Address) bool) (resolver.Address, error) {
 	addr := resolver.Address{Addr: filepath.ToSlash(filepath.Base(string(key)))}
 	var attr register.NodeMeta
 	if err := json.Unmarshal(val, &attr); err != nil {
 		return addr, err
 	}
 
-	if ok := allowFunc(attr); !ok {
+	if ok := allowFunc(attr, &addr); !ok {
 		return addr, filterError
 	}
 

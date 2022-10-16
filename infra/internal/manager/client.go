@@ -9,8 +9,11 @@ import (
 )
 
 var (
-	locker        sync.Mutex
+	clientLocker  sync.Mutex
 	clientManager map[any]any
+
+	proxyLocker  sync.RWMutex
+	proxyManager map[string]string
 )
 
 func init() {
@@ -18,14 +21,14 @@ func init() {
 }
 
 func RegisterClient(key, client any) {
-	locker.Lock()
+	clientLocker.Lock()
 	clientManager[key] = client
-	locker.Unlock()
+	clientLocker.Unlock()
 }
 
 func ResolveClient(key any) any {
-	locker.Lock()
-	defer locker.Unlock()
+	clientLocker.Lock()
+	defer clientLocker.Unlock()
 	return clientManager[key]
 }
 
@@ -39,4 +42,16 @@ func MustResolveEtcdClient() *clientv3.Client {
 		wlog.Panic("failed to resolve etcd client, please check already registered etcd-client")
 	}
 	return client.(*clientv3.Client)
+}
+
+func RegisterProxy(region, addr string) {
+	proxyLocker.Lock()
+	proxyManager[region] = addr
+	proxyLocker.Unlock()
+}
+
+func ResolveProxy(region string) string {
+	proxyLocker.RLocker().Lock()
+	defer proxyLocker.RLocker().Unlock()
+	return proxyManager[region]
 }
