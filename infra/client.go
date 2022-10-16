@@ -2,13 +2,13 @@ package infra
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
 
 	"github.com/spacegrower/watermelon/infra/resolver"
+	"github.com/spacegrower/watermelon/infra/resolver/etcd"
 )
 
 type client struct {
@@ -20,6 +20,7 @@ type clientOptions struct {
 	context     context.Context
 	resolver    resolver.Resolver
 	timeout     time.Duration
+	region      string
 }
 
 type ClientOptions func(c *clientOptions)
@@ -48,6 +49,12 @@ func ClientWithGrpcOptions(opts ...grpc.DialOption) ClientOptions {
 	}
 }
 
+func ClientWithRegion(region string) ClientOptions {
+	return func(c *clientOptions) {
+		c.region = region
+	}
+}
+
 func NewClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error) {
 	options := &clientOptions{
 		namespace: "default",
@@ -63,7 +70,7 @@ func NewClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnIn
 	)
 
 	if options.resolver == nil {
-		return nil, errors.New("undefined resolver")
+		etcd.MustSetupEtcdResolver(options.region)
 	}
 
 	cc, err := grpc.DialContext(options.context,

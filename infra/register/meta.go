@@ -8,7 +8,7 @@ import (
 
 type ServiceRegister interface {
 	Register() error
-	Init(server *grpc.Server, region, namespace, host string, port int, tags map[string]string) error
+	Init(serviceName string, methods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error
 }
 
 type NodeMetaKey struct{}

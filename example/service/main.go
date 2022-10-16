@@ -47,7 +47,7 @@ func main() {
 		panic(err)
 	}
 
-	srv := infra.NewDefaultServer(func(srv *grpc.Server) {
+	srv := infra.NewServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
 	}, infra.WithNamespace("test"))
 

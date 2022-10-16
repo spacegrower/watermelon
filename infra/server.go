@@ -18,6 +18,7 @@ import (
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register"
+	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
@@ -171,6 +172,10 @@ func NewServer(register func(srv *grpc.Server), opts ...Option) *server {
 		opt(s)
 	}
 
+	if s.registry == nil {
+		s.registry = etcd.MustSetupEtcdRegister()
+	}
+
 	if s.address == "" {
 		var err error
 		if s.address, err = utils.GetHostIP(); err != nil {
@@ -219,7 +224,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 
 	grpcListener := m.Match(cmux.Any())
 	go func() {
-		wlog.Info("start grpc serve")
+		wlog.Info("start grpc server")
 		_ = s.grpcServer.Serve(grpcListener)
 	}()
 
@@ -253,11 +258,25 @@ func (s *server) RunUntil(signals ...os.Signal) {
 	graceful.ShutDown()
 }
 
+func (s *server) GetServiceName() string {
+	for name := range s.grpcServer.GetServiceInfo() {
+		return name
+	}
+	return ""
+}
+
+func (s *server) GetServiceMethods() []grpc.MethodInfo {
+	for _, info := range s.grpcServer.GetServiceInfo() {
+		return info.Methods
+	}
+	return nil
+}
+
 func (s *server) registerServer(addr *net.TCPAddr) error {
 	if s.registry == nil {
 		return nil
 	}
 
-	s.registry.Init(s.grpcServer, s.region, s.namespace, addr.IP.String(), addr.Port, s.tags)
+	s.registry.Init(s.GetServiceName(), s.GetServiceMethods(), s.region, s.namespace, addr.IP.String(), addr.Port, s.tags)
 	return s.registry.Register()
 }

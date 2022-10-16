@@ -3,6 +3,7 @@ package etcd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -29,9 +30,10 @@ const (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
 
-func MustSetupEtcdResolver() *etcdResolver {
+func MustSetupEtcdResolver(region string) *etcdResolver {
 	return &etcdResolver{
 		client: manager.MustResolveEtcdClient(),
+		region: region,
 	}
 }
 
@@ -41,6 +43,8 @@ type etcdResolver struct {
 	namespace string
 	prefixKey string
 	log       wlog.Logger
+
+	region string
 
 	serviceConfig *wresolver.CustomizeServiceConfig
 }
@@ -112,8 +116,15 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 			if r.serviceConfig, err = parseServiceConfig(v.Value); err != nil {
 				return nil, err
 			}
-		} else if addr, err := parseNodeInfo(v.Key, v.Value); err != nil {
-			r.log.Error("failed to parse node")
+		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr register.NodeMeta) bool {
+			if r.region == "" {
+				return true
+			}
+			return attr.Region == r.region
+		}); err != nil {
+			if err != filterError {
+				r.log.Error("parse node info with error", zap.Error(err))
+			}
 		} else {
 			result = append(result, addr)
 		}
@@ -134,11 +145,17 @@ func parseServiceConfig(val []byte) (*wresolver.CustomizeServiceConfig, error) {
 	return &result, nil
 }
 
-func parseNodeInfo(key, val []byte) (resolver.Address, error) {
+var filterError = errors.New("filter")
+
+func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta) bool) (resolver.Address, error) {
 	addr := resolver.Address{Addr: filepath.ToSlash(filepath.Base(string(key)))}
 	var attr register.NodeMeta
 	if err := json.Unmarshal(val, &attr); err != nil {
 		return addr, err
+	}
+
+	if ok := allowFunc(attr); !ok {
+		return addr, filterError
 	}
 
 	addr.BalancerAttributes = attributes.New(register.NodeMetaKey{}, attr)

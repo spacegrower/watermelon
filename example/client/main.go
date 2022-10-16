@@ -26,8 +26,11 @@ func main() {
 		panic(err)
 	}
 
-	cc := infra.MustSetupDefaultClientConn(greeter.Greeter_ServiceDesc.ServiceName, infra.ClientWithNamespace("test"),
+	cc, err := infra.NewClientConn(greeter.Greeter_ServiceDesc.ServiceName, infra.ClientWithNamespace("test"),
 		infra.ClientWithGrpcOptions(grpc.WithInsecure()))
+	if err != nil {
+		panic(err)
+	}
 
 	client := greeter.NewGreeterClient(cc)
 

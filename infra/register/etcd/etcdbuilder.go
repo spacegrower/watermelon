@@ -52,7 +52,7 @@ func MustSetupEtcdRegister() register.ServiceRegister {
 	}
 }
 
-func (s *kvstore) Init(server *grpc.Server, region, namespace, host string, port int, tags map[string]string) error {
+func (s *kvstore) Init(serviceName string, methods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error {
 	meta := &register.NodeMeta{
 		Region:       region,
 		Namespace:    namespace,
@@ -72,16 +72,7 @@ func (s *kvstore) Init(server *grpc.Server, region, namespace, host string, port
 		return res, nil
 	})
 
-	for name, methods := range server.GetServiceInfo() {
-		meta.ServiceName = name
-		for _, v := range methods.Methods {
-			meta.Methods = append(meta.Methods, register.GrpcMethodInfo{
-				Name:           v.Name,
-				IsClientStream: v.IsClientStream,
-				IsServerStream: v.IsServerStream,
-			})
-		}
-	}
+	
 
 	s.meta = meta
 	return nil
