@@ -112,37 +112,37 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 
 type Option func(s *server)
 
-func WithNamespace(ns string) Option {
+func (*Server) WithNamespace(ns string) Option {
 	return func(s *server) {
 		s.serverInfo.namespace = ns
 	}
 }
 
-func WithRegion(region string) Option {
+func (*Server) WithRegion(region string) Option {
 	return func(s *server) {
 		s.serverInfo.region = region
 	}
 }
 
-func WithName(name string) Option {
+func (*Server) WithName(name string) Option {
 	return func(s *server) {
 		s.serverInfo.name = name
 	}
 }
 
-func WithAddress(addr string) Option {
+func (*Server) WithAddress(addr string) Option {
 	return func(s *server) {
 		s.serverInfo.address = addr
 	}
 }
 
-func WithServiceRegister(r register.ServiceRegister) Option {
+func (*Server) WithServiceRegister(r register.ServiceRegister) Option {
 	return func(s *server) {
 		s.registry = r
 	}
 }
 
-func NewServer(register func(srv *grpc.Server), opts ...Option) *server {
+func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{
 			region:    "default",

@@ -25,37 +25,37 @@ type clientOptions struct {
 
 type ClientOptions func(c *clientOptions)
 
-func ClientWithServiceResolver(r resolver.Resolver) ClientOptions {
+func (*ClientConn) WithServiceResolver(r resolver.Resolver) ClientOptions {
 	return func(c *clientOptions) {
 		c.resolver = r
 	}
 }
 
-func ClientWithNamespace(ns string) ClientOptions {
+func (*ClientConn) WithNamespace(ns string) ClientOptions {
 	return func(c *clientOptions) {
 		c.namespace = ns
 	}
 }
 
-func ClientWithDialTimeout(t time.Duration) ClientOptions {
+func (*ClientConn) WithDialTimeout(t time.Duration) ClientOptions {
 	return func(c *clientOptions) {
 		c.context, _ = context.WithTimeout(context.Background(), t)
 	}
 }
 
-func ClientWithGrpcOptions(opts ...grpc.DialOption) ClientOptions {
+func (*ClientConn) WithGrpcOptions(opts ...grpc.DialOption) ClientOptions {
 	return func(c *clientOptions) {
 		c.dialOptions = opts
 	}
 }
 
-func ClientWithRegion(region string) ClientOptions {
+func (*ClientConn) WithRegion(region string) ClientOptions {
 	return func(c *clientOptions) {
 		c.region = region
 	}
 }
 
-func NewClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error) {
+func newClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error) {
 	options := &clientOptions{
 		namespace: "default",
 		context:   context.Background(),

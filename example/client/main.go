@@ -26,8 +26,10 @@ func main() {
 		panic(err)
 	}
 
-	cc, err := infra.NewClientConn(greeter.Greeter_ServiceDesc.ServiceName, infra.ClientWithNamespace("test"),
-		infra.ClientWithGrpcOptions(grpc.WithInsecure()))
+	newClientConn := infra.NewClientConn()
+	cc, err := newClientConn(greeter.Greeter_ServiceDesc.ServiceName,
+		newClientConn.WithNamespace("test"),
+		newClientConn.WithGrpcOptions(grpc.WithInsecure()))
 	if err != nil {
 		panic(err)
 	}

@@ -47,9 +47,10 @@ func main() {
 		panic(err)
 	}
 
-	srv := infra.NewServer(func(srv *grpc.Server) {
+	newServer := infra.NewServer()
+	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
-	}, infra.WithNamespace("test"))
+	}, newServer.WithNamespace("test"))
 
 	srv.Use(func(ctx context.Context) error {
 		if err := middleware.Next(ctx); err != nil {
