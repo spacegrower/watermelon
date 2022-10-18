@@ -70,7 +70,7 @@ func newClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnIn
 	)
 
 	if options.resolver == nil {
-		etcd.MustSetupEtcdResolver(options.region)
+		options.resolver = etcd.MustSetupEtcdResolver(options.region)
 	}
 
 	cc, err := grpc.DialContext(options.context,
