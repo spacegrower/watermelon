@@ -54,6 +54,16 @@ func MustSetupEtcdRegister() register.ServiceRegister {
 	}
 }
 
+func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
+	ctx, cancel := context.WithCancel(client.Ctx())
+	return &kvstore{
+		ctx:        ctx,
+		cancelFunc: cancel,
+		client:     client,
+		log:        wlog.With(zap.String("component", "etcd-register")),
+	}
+}
+
 func (s *kvstore) Init(serviceName string, grpcMethods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error {
 	var methods []register.GrpcMethodInfo
 	for _, v := range grpcMethods {

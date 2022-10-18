@@ -23,21 +23,28 @@ import (
 
 func init() {
 	// registrar resolver builder
-	resolver.Register(new(etcdResolver))
+	resolver.Register(new(kvstore))
 }
 
 const (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
 
-func MustSetupEtcdResolver(region string) *etcdResolver {
-	return &etcdResolver{
+func MustSetupEtcdResolver(region string) wresolver.Resolver {
+	return &kvstore{
 		client: manager.MustResolveEtcdClient(),
 		region: region,
 	}
 }
 
-type etcdResolver struct {
+func NewEtcdResolver(client *clientv3.Client) wresolver.Resolver {
+	return &kvstore{
+		client: client,
+		log:    wlog.With(zap.String("component", "etcd-register")),
+	}
+}
+
+type kvstore struct {
 	client    *clientv3.Client
 	cc        resolver.ClientConn
 	namespace string
@@ -49,24 +56,24 @@ type etcdResolver struct {
 	serviceConfig *wresolver.CustomizeServiceConfig
 }
 
-func (r *etcdResolver) Scheme() string {
+func (r *kvstore) Scheme() string {
 	return ETCDResolverScheme
 }
 
-func (r *etcdResolver) GenerateTarget(serviceNameWithNs string) string {
+func (r *kvstore) GenerateTarget(serviceNameWithNs string) string {
 	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", serviceNameWithNs)
 }
 
-func (r *etcdResolver) buildResolveKey(service string) string {
+func (r *kvstore) buildResolveKey(service string) string {
 	return filepath.ToSlash(filepath.Join(etcd.ETCD_KEY_PREFIX, service))
 }
 
-func (r *etcdResolver) ResolveNow(_ resolver.ResolveNowOptions) {}
-func (r *etcdResolver) Close() {
+func (r *kvstore) ResolveNow(_ resolver.ResolveNowOptions) {}
+func (r *kvstore) Close() {
 	r.client.Close()
 }
 
-func (r *etcdResolver) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (
+func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (
 	resolver.Resolver, error) {
 
 	if r.client == nil {
@@ -101,7 +108,7 @@ func (r *etcdResolver) Build(target resolver.Target, cc resolver.ClientConn, _ r
 	return r, nil
 }
 
-func (r *etcdResolver) resolve() ([]resolver.Address, error) {
+func (r *kvstore) resolve() ([]resolver.Address, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
 	resp, err := r.client.Get(ctx, r.prefixKey, clientv3.WithPrefix())
@@ -173,7 +180,7 @@ func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta, addr 
 	return addr, nil
 }
 
-func (r *etcdResolver) watch(update func()) {
+func (r *kvstore) watch(update func()) {
 	var opts []clientv3.OpOption
 	opts = append(opts, clientv3.WithPrefix())
 
