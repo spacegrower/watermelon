@@ -20,8 +20,6 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
-type discover struct{}
-
 type remoteRegistry struct {
 	once       sync.Once
 	ctx        context.Context

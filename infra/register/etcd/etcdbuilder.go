@@ -28,8 +28,6 @@ func generateServiceKey(namespace, serviceName, nodeID string, port int) string 
 	return fmt.Sprintf("%s/%s/%s/node/%s:%d", ETCD_KEY_PREFIX, namespace, serviceName, nodeID, port)
 }
 
-type discover struct{}
-
 type kvstore struct {
 	once       sync.Once
 	ctx        context.Context
