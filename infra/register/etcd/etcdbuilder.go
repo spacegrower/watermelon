@@ -3,21 +3,18 @@ package etcd
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/utils"
-	"github.com/spacegrower/watermelon/infra/version"
 	"github.com/spacegrower/watermelon/infra/wlog"
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
@@ -38,7 +35,7 @@ type kvstore struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	client     *clientv3.Client
-	meta       *register.NodeMeta
+	meta       register.NodeMeta
 	log        wlog.Logger
 	leaseID    clientv3.LeaseID
 }
@@ -64,29 +61,8 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
 	}
 }
 
-func (s *kvstore) Init(serviceName string, grpcMethods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error {
-	var methods []register.GrpcMethodInfo
-	for _, v := range grpcMethods {
-		methods = append(methods, register.GrpcMethodInfo{
-			Name:           v.Name,
-			IsClientStream: v.IsClientStream,
-			IsServerStream: v.IsServerStream,
-		})
-	}
-
-	meta := &register.NodeMeta{
-		ServiceName:  serviceName,
-		Methods:      methods,
-		Region:       region,
-		Namespace:    namespace,
-		Host:         host,
-		Port:         port,
-		Weight:       100,
-		Runtime:      runtime.Version(),
-		Version:      version.V,
-		RegisterTime: time.Now().Unix(),
-	}
-
+func (s *kvstore) Init(meta register.NodeMeta) error {
+	// customize your register logic
 	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int, error) {
 		res, err := strconv.Atoi(val)
 		if err != nil {
@@ -201,7 +177,7 @@ func (s *kvstore) reRegister() {
 }
 
 func (s *kvstore) revoke(leaseID clientv3.LeaseID) error {
-	s.log.Info("revoke lease", zap.Int64("lease", int64(leaseID)))
+	s.log.Debug("revoke lease", zap.Int64("lease", int64(leaseID)))
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
 	defer cancel()
 	if _, err := s.client.Revoke(ctx, leaseID); err != nil {

@@ -1,0 +1,31 @@
+// protoc --go_out=plugins=grpc:. spacegrower.remote.registry.proto
+syntax = "proto3";
+
+package remote;
+
+option go_package = "spacegrower/remote";
+
+service Registry {
+    rpc Register(stream ServiceInfo) returns(stream Command){}
+    rpc Resolver(TargetInfo) returns(stream ResolveInfo){}
+}
+
+message ServiceInfo {
+    string Version = 1;
+    bytes Raw = 2;
+}
+
+message Command {
+    string Command = 1;
+    map<string,string> Args = 2; 
+}
+
+message ResolveInfo {
+    map<string,bytes> Address = 1;
+    bytes Config = 2;
+}
+
+message TargetInfo {
+    string Namespace = 1;
+    string Service = 2;
+}

@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
+	"github.com/spacegrower/watermelon/infra/version"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
 
@@ -142,6 +144,12 @@ func (*Server) WithServiceRegister(r register.ServiceRegister) Option {
 	}
 }
 
+func (*Server) WithTags(tags map[string]string) Option {
+	return func(s *server) {
+		s.tags = tags
+	}
+}
+
 func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{
@@ -191,7 +199,6 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 }
 
 func (s *server) Serve(notifications ...chan struct{}) error {
-	// create the main listener
 	l, err := net.Listen("tcp", s.address)
 	if err != nil {
 		return err
@@ -278,6 +285,28 @@ func (s *server) registerServer(addr *net.TCPAddr) error {
 		return nil
 	}
 
-	s.registry.Init(s.GetServiceName(), s.GetServiceMethods(), s.region, s.namespace, addr.IP.String(), addr.Port, s.tags)
+	metaData := register.NodeMeta{
+		Region:       s.region,
+		Namespace:    s.namespace,
+		ServiceName:  s.GetServiceName(),
+		Host:         addr.IP.String(),
+		Port:         addr.Port,
+		Weight:       100,
+		Tags:         s.tags,
+		Methods:      nil,
+		Runtime:      runtime.Version(),
+		Version:      version.V,
+		RegisterTime: time.Now().Unix(),
+	}
+
+	for _, v := range s.GetServiceMethods() {
+		metaData.Methods = append(metaData.Methods, register.GrpcMethodInfo{
+			Name:           v.Name,
+			IsClientStream: v.IsClientStream,
+			IsServerStream: v.IsServerStream,
+		})
+	}
+
+	s.registry.Init(metaData)
 	return s.registry.Register()
 }

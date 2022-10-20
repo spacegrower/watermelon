@@ -2,15 +2,13 @@ package register
 
 import (
 	"encoding/json"
-
-	"google.golang.org/grpc"
 )
 
 type ServiceRegister interface {
 	Register() error
 	DeRegister() error
 	Close()
-	Init(serviceName string, methods []grpc.MethodInfo, region, namespace, host string, port int, tags map[string]string) error
+	Init(NodeMeta) error
 }
 
 type NodeMetaKey struct{}
