@@ -35,10 +35,7 @@ func MustSetupEtcdResolver(region string) wresolver.Resolver {
 }
 
 func NewEtcdResolver(client *clientv3.Client, region string) wresolver.Resolver {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &kvstore{
-		ctx:    ctx,
-		cancel: cancel,
 		client: client,
 		region: region,
 		log:    wlog.With(zap.String("component", "etcd-resolver")),
@@ -78,10 +75,11 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 	}
 	service := filepath.ToSlash(filepath.Base(target.URL.Path))
 
-	ctx, cancel := context.WithCancel(r.ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	rr := &etcdResolver{
 		ctx:       ctx,
 		cancel:    cancel,
+		client:    r.client,
 		prefixKey: r.buildResolveKey(target.URL.Path),
 		service:   service,
 		region:    r.region,
@@ -148,6 +146,7 @@ func (r *etcdResolver) Close() {
 func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
+	fmt.Println(111, r.client)
 	resp, err := r.client.Get(ctx, r.prefixKey, clientv3.WithPrefix())
 	if err != nil {
 		r.log.Error("failed to resolve service nodes", zap.Error(err))
@@ -186,6 +185,10 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 
 	if len(result) == 0 {
 		return []resolver.Address{wresolver.NilAddress}, nil
+	}
+
+	if r.serviceConfig == nil {
+		r.serviceConfig, _ = parseServiceConfig([]byte(wresolver.GetDefaultGrpcServiceConfig()))
 	}
 	return result, nil
 }
