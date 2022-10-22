@@ -31,22 +31,24 @@ const (
 )
 
 func MustSetupEtcdResolver(region string) wresolver.Resolver {
-	return &kvstore{
-		client: manager.MustResolveEtcdClient(),
-		region: region,
-	}
+	return NewEtcdResolver(manager.MustResolveEtcdClient(), region)
 }
 
-func NewEtcdResolver(client *clientv3.Client) wresolver.Resolver {
+func NewEtcdResolver(client *clientv3.Client, region string) wresolver.Resolver {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &kvstore{
+		ctx:    ctx,
+		cancel: cancel,
 		client: client,
-		log:    wlog.With(zap.String("component", "etcd-register")),
+		region: region,
+		log:    wlog.With(zap.String("component", "etcd-resolver")),
 	}
 }
 
 type kvstore struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
 	client    *clientv3.Client
-	cc        resolver.ClientConn
 	namespace string
 	prefixKey string
 	log       wlog.Logger
@@ -68,30 +70,45 @@ func (r *kvstore) buildResolveKey(service string) string {
 	return filepath.ToSlash(filepath.Join(etcd.ETCD_KEY_PREFIX, service))
 }
 
-func (r *kvstore) ResolveNow(_ resolver.ResolveNowOptions) {}
-func (r *kvstore) Close() {
-	r.client.Close()
-}
-
-func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (
+func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (
 	resolver.Resolver, error) {
 
 	if r.client == nil {
 		r.client = manager.MustResolveEtcdClient()
 	}
-	r.log = wlog.With(zap.String("component", "etcd-resolver"))
 	service := filepath.ToSlash(filepath.Base(target.URL.Path))
-	r.prefixKey = r.buildResolveKey(target.URL.Path)
+
+	ctx, cancel := context.WithCancel(r.ctx)
+	rr := &etcdResolver{
+		ctx:       ctx,
+		cancel:    cancel,
+		prefixKey: r.buildResolveKey(target.URL.Path),
+		service:   service,
+		region:    r.region,
+		target:    target,
+		opts:      opts,
+		log:       wlog.With(zap.String("component", "etcd-resolver")),
+	}
 
 	update := func() {
-		var addrs []resolver.Address
-		addrs, err := r.resolve()
-		if err != nil {
-			r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
+		var (
+			addrs []resolver.Address
+			err   error
+		)
+		if r.serviceConfig != nil && r.serviceConfig.Disabled {
 			addrs = []resolver.Address{
-				wresolver.NilAddress,
+				wresolver.Disabled,
+			}
+		} else {
+			addrs, err = rr.resolve()
+			if err != nil {
+				r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
+				addrs = []resolver.Address{
+					wresolver.NilAddress,
+				}
 			}
 		}
+
 		if err := cc.UpdateState(resolver.State{
 			Addresses:     addrs,
 			ServiceConfig: cc.ParseServiceConfig(wresolver.ParseCustomizeToGrpcServiceConfig(r.serviceConfig)),
@@ -101,14 +118,34 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, _ resolv
 	}
 
 	go safe.Run(func() {
-		r.watch(update)
+		rr.watch(update)
 	})
 	update()
 
-	return r, nil
+	return rr, nil
 }
 
-func (r *kvstore) resolve() ([]resolver.Address, error) {
+type etcdResolver struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	client        *clientv3.Client
+	prefixKey     string
+	service       string
+	region        string
+	target        resolver.Target
+	cc            resolver.ClientConn
+	opts          resolver.BuildOptions
+	log           wlog.Logger
+	serviceConfig *wresolver.CustomizeServiceConfig
+}
+
+func (r *etcdResolver) ResolveNow(_ resolver.ResolveNowOptions) {}
+func (r *etcdResolver) Close() {
+	r.cancel()
+}
+
+func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
 	resp, err := r.client.Get(ctx, r.prefixKey, clientv3.WithPrefix())
@@ -180,7 +217,7 @@ func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta, addr 
 	return addr, nil
 }
 
-func (r *kvstore) watch(update func()) {
+func (r *etcdResolver) watch(update func()) {
 	var opts []clientv3.OpOption
 	opts = append(opts, clientv3.WithPrefix())
 
