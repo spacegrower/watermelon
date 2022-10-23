@@ -146,7 +146,7 @@ func (r *etcdResolver) Close() {
 func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
-	fmt.Println(111, r.client)
+
 	resp, err := r.client.Get(ctx, r.prefixKey, clientv3.WithPrefix())
 	if err != nil {
 		r.log.Error("failed to resolve service nodes", zap.Error(err))

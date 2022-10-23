@@ -109,8 +109,8 @@ func (r *routerGroup) Group() RouterGroup {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 	return &routerGroup{
-		router:       &(*r.router),
-		latestRouter: &(*r.router),
+		router:       copyRouter(r.router),
+		latestRouter: copyRouter(r.router),
 		ExistRouter:  r.ExistRouter,
 		AddRouter:    r.AddRouter,
 	}
@@ -119,8 +119,12 @@ func (r *routerGroup) Group() RouterGroup {
 func (r *routerGroup) Handler(methods ...interface{}) {
 	r.locker.Lock()
 	defer r.locker.Unlock()
-	for _, method := range methods {
 
+	if r.router == nil {
+		return
+	}
+
+	for _, method := range methods {
 		funcName := getGrpcFunctionName(method)
 		if funcName == "" {
 			wlog.Panic("router: failed to patch handler function name")
@@ -130,8 +134,7 @@ func (r *routerGroup) Handler(methods ...interface{}) {
 			wlog.Panic("router: duplic handler")
 		}
 
-		r.AddRouter(funcName, &(*r.router))
-
+		r.AddRouter(funcName, copyRouter(r.router))
 	}
 }
 
@@ -154,4 +157,10 @@ func getGrpcFunctionName(i interface{}) string {
 		return fields[size-1]
 	}
 	return ""
+}
+
+func copyRouter(r *router) *router {
+	nr := new(router)
+	*nr = *r
+	return nr
 }
