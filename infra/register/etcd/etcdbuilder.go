@@ -48,13 +48,7 @@ type kvstore struct {
 
 func MustSetupEtcdRegister() register.ServiceRegister {
 	client := manager.MustResolveEtcdClient()
-	ctx, cancel := context.WithCancel(client.Ctx())
-	return &kvstore{
-		ctx:        ctx,
-		cancelFunc: cancel,
-		client:     client,
-		log:        wlog.With(zap.String("component", "etcd-register")),
-	}
+	return NewEtcdRegister(client)
 }
 
 func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
@@ -97,6 +91,7 @@ func (s *kvstore) Register() error {
 
 	s.once.Do(func() {
 		graceful.RegisterShutDownHandlers(func() {
+			s.DeRegister()
 			s.client.Close()
 		})
 	})
@@ -132,7 +127,7 @@ func (s *kvstore) DeRegister() error {
 	defer s.cancelFunc()
 
 	if s.leaseID != clientv3.NoLease {
-		ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
 		registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
 		s.client.Delete(ctx, registerKey)
@@ -160,6 +155,7 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 
 					select {
 					case <-s.ctx.Done():
+						s.Close()
 						return
 					default:
 					}
@@ -168,7 +164,7 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 					return
 				}
 			case <-s.ctx.Done():
-				s.log.Info("context done")
+				s.Close()
 				return
 			}
 		}
@@ -195,7 +191,7 @@ func (s *kvstore) reRegister() {
 
 func (s *kvstore) revoke(leaseID clientv3.LeaseID) error {
 	s.log.Debug("revoke lease", zap.Int64("lease", int64(leaseID)))
-	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
 	if _, err := s.client.Revoke(ctx, leaseID); err != nil {
 		return err
