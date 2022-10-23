@@ -14,10 +14,27 @@ var (
 
 	proxyLocker  sync.RWMutex
 	proxyManager map[string]string
+
+	kvLocker sync.RWMutex
+	kvstore  map[any]any
 )
 
 func init() {
 	clientManager = make(map[any]any)
+	proxyManager = make(map[string]string)
+	kvstore = make(map[any]any)
+}
+
+func RegisterKV(key, val any) {
+	kvLocker.Lock()
+	kvstore[key] = val
+	kvLocker.Unlock()
+}
+
+func ResolveKV(key any) any {
+	kvLocker.RLocker().Lock()
+	defer kvLocker.RLocker().Unlock()
+	return kvstore[key]
 }
 
 func RegisterClient(key, client any) {

@@ -1,13 +1,24 @@
 package infra
 
 import (
+	"strings"
+
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
 	_ "github.com/spacegrower/watermelon/infra/balancer"
 	"github.com/spacegrower/watermelon/infra/definition"
+	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 )
+
+// RegisterETCDRegisterPrefixKey a function to change default register(etcd) prefix key
+func RegisterETCDRegisterPrefixKey(prefix string) {
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	manager.RegisterKV(ide.ETCDPrefixKey{}, prefix)
+}
 
 // ResolveEtcdClient a function to register etcd client to watermelon global
 func RegisterEtcdClient(etcdConfig clientv3.Config) error {

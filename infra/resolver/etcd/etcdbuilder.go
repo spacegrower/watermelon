@@ -21,11 +21,6 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
-func init() {
-	// registrar resolver builder
-	resolver.Register(new(kvstore))
-}
-
 const (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
@@ -35,11 +30,14 @@ func MustSetupEtcdResolver(region string) wresolver.Resolver {
 }
 
 func NewEtcdResolver(client *clientv3.Client, region string) wresolver.Resolver {
-	return &kvstore{
+	ks := &kvstore{
 		client: client,
 		region: region,
 		log:    wlog.With(zap.String("component", "etcd-resolver")),
 	}
+
+	resolver.Register(ks)
+	return ks
 }
 
 type kvstore struct {
@@ -62,7 +60,7 @@ func (r *kvstore) GenerateTarget(serviceNameWithNs string) string {
 }
 
 func (r *kvstore) buildResolveKey(service string) string {
-	return filepath.ToSlash(filepath.Join(etcd.ETCD_KEY_PREFIX, service))
+	return filepath.ToSlash(filepath.Join(etcd.GetETCDPrefixKey(), service)) + "/"
 }
 
 func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (

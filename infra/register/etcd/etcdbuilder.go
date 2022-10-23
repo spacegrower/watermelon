@@ -12,6 +12,7 @@ import (
 
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
+	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/utils"
@@ -20,12 +21,19 @@ import (
 )
 
 const (
-	liveTime        int64 = 5
-	ETCD_KEY_PREFIX       = "/watermelon/service"
+	liveTime int64 = 5
 )
 
+func init() {
+	manager.RegisterKV(ide.ETCDPrefixKey{}, "/watermelon")
+}
+
+func GetETCDPrefixKey() string {
+	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
+}
+
 func generateServiceKey(namespace, serviceName, nodeID string, port int) string {
-	return fmt.Sprintf("%s/%s/%s/node/%s:%d", ETCD_KEY_PREFIX, namespace, serviceName, nodeID, port)
+	return fmt.Sprintf("%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), namespace, serviceName, nodeID, port)
 }
 
 type kvstore struct {
@@ -122,7 +130,12 @@ func (s *kvstore) register() error {
 
 func (s *kvstore) DeRegister() error {
 	defer s.cancelFunc()
+
 	if s.leaseID != clientv3.NoLease {
+		ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+		defer cancel()
+		registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
+		s.client.Delete(ctx, registerKey)
 		return s.revoke(s.leaseID)
 	}
 	return nil

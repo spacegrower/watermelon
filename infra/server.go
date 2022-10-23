@@ -295,7 +295,7 @@ func (s *server) registerServer(addr *net.TCPAddr) error {
 		Tags:         s.tags,
 		Methods:      nil,
 		Runtime:      runtime.Version(),
-		Version:      version.V,
+		Version:      version.Version,
 		RegisterTime: time.Now().Unix(),
 	}
 

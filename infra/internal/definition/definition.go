@@ -9,3 +9,4 @@ type ResponseKey struct{}
 type FullMethodKey struct{}
 type RouterIndex struct{}
 type ContextKey struct{}
+type ETCDPrefixKey struct{}
