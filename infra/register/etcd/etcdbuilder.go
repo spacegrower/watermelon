@@ -121,6 +121,7 @@ func (s *kvstore) register() error {
 }
 
 func (s *kvstore) DeRegister() error {
+	s.cancelFunc()
 	if s.leaseID != clientv3.NoLease {
 		return s.revoke(s.leaseID)
 	}
@@ -130,7 +131,6 @@ func (s *kvstore) DeRegister() error {
 func (s *kvstore) Close() {
 	// just close kvstore not etcd client
 	s.DeRegister()
-	s.cancelFunc()
 }
 
 func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
@@ -144,7 +144,13 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 			select {
 			case _, ok := <-ch:
 				if !ok {
-					s.revoke(leaseID)
+
+					select {
+					case <-s.ctx.Done():
+						return
+					default:
+					}
+
 					s.reRegister()
 					return
 				}
