@@ -160,6 +160,9 @@ func getGrpcFunctionName(i interface{}) string {
 }
 
 func copyRouter(r *router) *router {
+	if r == nil {
+		return r
+	}
 	nr := new(router)
 	*nr = *r
 	return nr

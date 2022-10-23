@@ -52,7 +52,8 @@ func main() {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
 	}, newServer.WithNamespace("test"))
 
-	srv.Use(func(ctx context.Context) error {
+	a := srv.Group()
+	a.Use(func(ctx context.Context) error {
 		if err := middleware.Next(ctx); err != nil {
 			fmt.Println("return error", err)
 			return err
@@ -62,7 +63,7 @@ func main() {
 		return nil
 	})
 
-	srv.Use(func(ctx context.Context) error {
+	a.Use(func(ctx context.Context) error {
 		fullMethod := middleware.GetFullMethodFrom(ctx)
 
 		if utils.PathBase(fullMethod) == "SayHelloAgain" {
@@ -71,7 +72,7 @@ func main() {
 		return nil
 	})
 
-	srv.Handler(greeter.GreeterServer.SayHello, greeter.GreeterServer.SayHelloAgain)
+	a.Handler(greeter.GreeterServer.SayHello, greeter.GreeterServer.SayHelloAgain)
 
 	srv.RunUntil(syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 }
