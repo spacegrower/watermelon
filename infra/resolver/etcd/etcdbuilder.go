@@ -51,8 +51,6 @@ type kvstore struct {
 	log       wlog.Logger
 
 	region string
-
-	serviceConfig *wresolver.CustomizeServiceConfig
 }
 
 func (r *kvstore) Scheme() string {
@@ -93,23 +91,18 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 			addrs []resolver.Address
 			err   error
 		)
-		if r.serviceConfig != nil && r.serviceConfig.Disabled {
+
+		addrs, err = rr.resolve()
+		if err != nil {
+			r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
 			addrs = []resolver.Address{
-				wresolver.Disabled,
-			}
-		} else {
-			addrs, err = rr.resolve()
-			if err != nil {
-				r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
-				addrs = []resolver.Address{
-					wresolver.NilAddress,
-				}
+				wresolver.NilAddress,
 			}
 		}
 
 		if err := cc.UpdateState(resolver.State{
 			Addresses:     addrs,
-			ServiceConfig: cc.ParseServiceConfig(wresolver.ParseCustomizeToGrpcServiceConfig(r.serviceConfig)),
+			ServiceConfig: cc.ParseServiceConfig(wresolver.ParseCustomizeToGrpcServiceConfig(rr.serviceConfig)),
 		}); err != nil {
 			r.log.Error("failed to update connect state", zap.Error(err))
 		}
@@ -190,6 +183,11 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 	if r.serviceConfig == nil {
 		r.serviceConfig, _ = parseServiceConfig([]byte(wresolver.GetDefaultGrpcServiceConfig()))
 	}
+
+	if r.serviceConfig.Disabled {
+		return []resolver.Address{wresolver.Disabled}, nil
+	}
+
 	return result, nil
 }
 

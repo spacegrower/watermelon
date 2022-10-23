@@ -121,7 +121,7 @@ func (s *kvstore) register() error {
 }
 
 func (s *kvstore) DeRegister() error {
-	s.cancelFunc()
+	defer s.cancelFunc()
 	if s.leaseID != clientv3.NoLease {
 		return s.revoke(s.leaseID)
 	}
