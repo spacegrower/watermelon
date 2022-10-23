@@ -23,13 +23,13 @@ type weightNodeStore struct {
 	Method      string
 	Nodes       []*weigthNode
 	Count       int
-	TotalWeight int
+	TotalWeight int32
 }
 
 type weigthNode struct {
 	Node
-	Weight        int
-	CurrentWeight int
+	Weight        int32
+	CurrentWeight int32
 }
 
 type weightRobinPicker struct {
@@ -83,7 +83,7 @@ func (p *weightRobinPicker) Pick(info balancer.PickInfo) (balancer.PickResult, e
 	}
 
 	var (
-		maxWeight     int
+		maxWeight     int32
 		selectedIndex int
 	)
 	for i, n := range list.Nodes {

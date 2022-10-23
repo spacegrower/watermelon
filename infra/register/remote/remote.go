@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
@@ -71,12 +70,12 @@ func NewRemoteRegister(endpoint string, opts ...grpc.DialOption) (register.Servi
 
 func (s *remoteRegistry) Init(meta register.NodeMeta) error {
 	// customize your register logic
-	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int, error) {
+	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int32, error) {
 		res, err := strconv.Atoi(val)
 		if err != nil {
 			return 0, err
 		}
-		return res, nil
+		return int32(res), nil
 	})
 
 	s.meta = meta
@@ -102,12 +101,22 @@ func (s *remoteRegistry) Register() error {
 }
 
 func (s *remoteRegistry) register() error {
-	meta, _ := json.Marshal(s.meta)
+	meta := &remote.ServiceInfo{
+		Region:      s.meta.Region,
+		Namespace:   s.meta.Namespace,
+		ServiceName: s.meta.ServiceName,
+		Host:        s.meta.Host,
+		Port:        int32(s.meta.Port),
+		Weight:      s.meta.Weight,
+		Runtime:     s.meta.Runtime,
+		Tags:        s.meta.Tags,
+	}
 
-	if err := s.client.Send(&remote.ServiceInfo{
-		Version: "v1",
-		Raw:     meta,
-	}); err != nil {
+	for k, v := range meta.Methods {
+		meta.Methods[k] = v
+	}
+
+	if err := s.client.Send(meta); err != nil {
 		return err
 	}
 

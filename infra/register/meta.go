@@ -19,7 +19,7 @@ type NodeMeta struct {
 	ServiceName  string            `json:"service_name"`
 	Host         string            `json:"host"`
 	Port         int               `json:"port"`
-	Weight       int               `json:"weight"`
+	Weight       int32             `json:"weight"`
 	Tags         map[string]string `json:"tags"`
 	Methods      []GrpcMethodInfo  `json:"methods"`
 	Runtime      string            `json:"runtime"`

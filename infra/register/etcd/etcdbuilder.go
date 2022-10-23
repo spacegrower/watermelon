@@ -61,12 +61,12 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
 
 func (s *kvstore) Init(meta register.NodeMeta) error {
 	// customize your register logic
-	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int, error) {
+	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int32, error) {
 		res, err := strconv.Atoi(val)
 		if err != nil {
 			return 0, err
 		}
-		return res, nil
+		return int32(res), nil
 	})
 
 	s.meta = meta
