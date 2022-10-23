@@ -92,7 +92,7 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 		c := wctx.Wrap(ss.Context())
 
 		preset.SetFullMethodInto(c, info.FullMethod)
-		preset.SetGrpcRequestTypeInto(c, definition.UnaryRequest)
+		preset.SetGrpcRequestTypeInto(c, definition.StreamRequest)
 		preset.SetStreamHandlerInto(c, func() error {
 			return handler(srv, &fakeServerStream{
 				ctx:          c,
