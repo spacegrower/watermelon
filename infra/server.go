@@ -46,6 +46,7 @@ type server struct {
 }
 
 type serverInfo struct {
+	orgid     int64
 	region    string
 	namespace string
 	name      string
@@ -113,6 +114,12 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 }
 
 type Option func(s *server)
+
+func (*Server) WithOrg(id int64) Option {
+	return func(s *server) {
+		s.orgid = id
+	}
+}
 
 func (*Server) WithNamespace(ns string) Option {
 	return func(s *server) {
@@ -286,6 +293,7 @@ func (s *server) registerServer(addr *net.TCPAddr) error {
 	}
 
 	metaData := register.NodeMeta{
+		OrgID:        s.orgid,
 		Region:       s.region,
 		Namespace:    s.namespace,
 		ServiceName:  s.GetServiceName(),

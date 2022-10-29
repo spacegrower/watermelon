@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc"
@@ -15,6 +16,7 @@ type client struct {
 }
 
 type clientOptions struct {
+	orgid       int64
 	namespace   string
 	dialOptions []grpc.DialOption
 	context     context.Context
@@ -28,6 +30,12 @@ type ClientOptions func(c *clientOptions)
 func (*ClientConn) WithServiceResolver(r resolver.Resolver) ClientOptions {
 	return func(c *clientOptions) {
 		c.resolver = r
+	}
+}
+
+func (*ClientConn) WithOrg(id int64) ClientOptions {
+	return func(c *clientOptions) {
+		c.orgid = id
 	}
 }
 
@@ -74,7 +82,7 @@ func newClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnIn
 	}
 
 	cc, err := grpc.DialContext(options.context,
-		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(options.namespace, serviceName))),
+		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(strconv.FormatInt(options.orgid, 10), options.namespace, serviceName))),
 		options.dialOptions...)
 	if err != nil {
 		return nil, err

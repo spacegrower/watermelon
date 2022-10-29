@@ -24,6 +24,10 @@ const (
 	liveTime int64 = 5
 )
 
+var (
+	DefaultOrgID = 0
+)
+
 func init() {
 	manager.RegisterKV(ide.ETCDPrefixKey{}, "/watermelon")
 }
@@ -32,8 +36,8 @@ func GetETCDPrefixKey() string {
 	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
 }
 
-func generateServiceKey(namespace, serviceName, nodeID string, port int) string {
-	return fmt.Sprintf("%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), namespace, serviceName, nodeID, port)
+func generateServiceKey(orgid int64, namespace, serviceName, nodeID string, port int) string {
+	return fmt.Sprintf("%s/%d/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
 }
 
 type kvstore struct {
@@ -110,7 +114,7 @@ func (s *kvstore) register() error {
 
 		s.leaseID = resp.ID
 	}
-	registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
+	registerKey := generateServiceKey(s.meta.OrgID, s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
 	if _, err := s.client.Put(ctx, registerKey, s.meta.ToJson(), clientv3.WithLease(s.leaseID)); err != nil {
 		return err
 	}
@@ -129,7 +133,7 @@ func (s *kvstore) DeRegister() error {
 	if s.leaseID != clientv3.NoLease {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
-		registerKey := generateServiceKey(s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
+		registerKey := generateServiceKey(s.meta.OrgID, s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
 		s.client.Delete(ctx, registerKey)
 		return s.revoke(s.leaseID)
 	}

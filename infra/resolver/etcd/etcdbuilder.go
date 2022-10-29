@@ -55,8 +55,8 @@ func (r *kvstore) Scheme() string {
 	return ETCDResolverScheme
 }
 
-func (r *kvstore) GenerateTarget(serviceNameWithNs string) string {
-	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", serviceNameWithNs)
+func (r *kvstore) GenerateTarget(fullServiceName string) string {
+	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", fullServiceName)
 }
 
 func (r *kvstore) buildResolveKey(service string) string {
