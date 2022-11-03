@@ -36,8 +36,8 @@ func GetETCDPrefixKey() string {
 	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
 }
 
-func generateServiceKey(orgid int64, namespace, serviceName, nodeID string, port int) string {
-	return fmt.Sprintf("%s/%d/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
+func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
+	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
 }
 
 type kvstore struct {

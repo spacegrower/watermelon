@@ -15,7 +15,7 @@ type NodeMetaKey struct{}
 
 type NodeMeta struct {
 	Region       string            `json:"region"`
-	OrgID        int64             `json:"org_id"`
+	OrgID        string            `json:"org_id"`
 	Namespace    string            `json:"namespace"`
 	ServiceName  string            `json:"service_name"`
 	Host         string            `json:"host"`

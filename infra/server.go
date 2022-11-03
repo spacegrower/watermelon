@@ -46,7 +46,7 @@ type server struct {
 }
 
 type serverInfo struct {
-	orgid     int64
+	orgid     string
 	region    string
 	namespace string
 	name      string
@@ -115,7 +115,7 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 
 type Option func(s *server)
 
-func (*Server) WithOrg(id int64) Option {
+func (*Server) WithOrg(id string) Option {
 	return func(s *server) {
 		s.orgid = id
 	}
@@ -160,6 +160,7 @@ func (*Server) WithTags(tags map[string]string) Option {
 func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{
+			orgid:     "default",
 			region:    "default",
 			namespace: "default",
 			name:      "default",
