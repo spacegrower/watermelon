@@ -13,6 +13,7 @@ import (
 	"github.com/spacegrower/watermelon/etc/example/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/middleware"
+	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
@@ -50,7 +51,8 @@ func main() {
 	newServer := infra.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
-	}, newServer.WithNamespace("test"))
+	}, newServer.WithNamespace("test"),
+		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()))
 
 	a := srv.Group()
 	a.Use(func(ctx context.Context) error {

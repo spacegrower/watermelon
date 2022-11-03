@@ -19,7 +19,6 @@ import (
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register"
-	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/version"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -188,9 +187,10 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 		opt(s)
 	}
 
-	if s.registry == nil {
-		s.registry = etcd.MustSetupEtcdRegister()
-	}
+	// 有些场景可能不需要服务注册
+	// if s.registry == nil {
+	// 	s.registry = etcd.MustSetupEtcdRegister()
+	// }
 
 	if s.address == "" {
 		var err error
