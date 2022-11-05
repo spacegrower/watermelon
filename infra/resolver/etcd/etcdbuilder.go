@@ -55,8 +55,8 @@ func (r *kvstore) Scheme() string {
 	return ETCDResolverScheme
 }
 
-func (r *kvstore) GenerateTarget(serviceNameWithNs string) string {
-	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", serviceNameWithNs)
+func (r *kvstore) GenerateTarget(fullServiceName string) string {
+	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", fullServiceName)
 }
 
 func (r *kvstore) buildResolveKey(service string) string {
@@ -151,7 +151,6 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 				return nil, err
 			}
 		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr register.NodeMeta, addr *resolver.Address) bool {
-			fmt.Println(attr.Region, r.region)
 			if r.region == "" {
 				return true
 			}
@@ -164,8 +163,6 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 
 				addr.Addr = proxy
 				addr.ServerName = proxy
-
-				fmt.Println(addr)
 			}
 			return true
 

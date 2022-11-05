@@ -15,6 +15,7 @@ type client struct {
 }
 
 type clientOptions struct {
+	orgid       string
 	namespace   string
 	dialOptions []grpc.DialOption
 	resolver    resolver.Resolver
@@ -27,6 +28,12 @@ type ClientOptions func(c *clientOptions)
 func (*ClientConn) WithServiceResolver(r resolver.Resolver) ClientOptions {
 	return func(c *clientOptions) {
 		c.resolver = r
+	}
+}
+
+func (*ClientConn) WithOrg(id string) ClientOptions {
+	return func(c *clientOptions) {
+		c.orgid = id
 	}
 }
 
@@ -56,6 +63,8 @@ func (*ClientConn) WithRegion(region string) ClientOptions {
 
 func newClientConn(serviceName string, opts ...ClientOptions) (*grpc.ClientConn, error) {
 	options := &clientOptions{
+		orgid:     "default",
+		region:    "default",
 		namespace: "default",
 		timeout:   time.Second * 5,
 	}
@@ -75,7 +84,7 @@ func newClientConn(serviceName string, opts ...ClientOptions) (*grpc.ClientConn,
 	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
 	defer cancel()
 	cc, err := grpc.DialContext(ctx,
-		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(options.namespace, serviceName))),
+		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(options.orgid, options.namespace, serviceName))),
 		options.dialOptions...)
 	if err != nil {
 		return nil, err

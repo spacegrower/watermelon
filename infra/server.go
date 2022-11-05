@@ -19,7 +19,6 @@ import (
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register"
-	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/version"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -46,6 +45,7 @@ type server struct {
 }
 
 type serverInfo struct {
+	orgid     string
 	region    string
 	namespace string
 	name      string
@@ -114,6 +114,12 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 
 type Option func(s *server)
 
+func (*Server) WithOrg(id string) Option {
+	return func(s *server) {
+		s.orgid = id
+	}
+}
+
 func (*Server) WithNamespace(ns string) Option {
 	return func(s *server) {
 		s.serverInfo.namespace = ns
@@ -153,6 +159,7 @@ func (*Server) WithTags(tags map[string]string) Option {
 func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{
+			orgid:     "default",
 			region:    "default",
 			namespace: "default",
 			name:      "default",
@@ -180,9 +187,10 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 		opt(s)
 	}
 
-	if s.registry == nil {
-		s.registry = etcd.MustSetupEtcdRegister()
-	}
+	// 有些场景可能不需要服务注册
+	// if s.registry == nil {
+	// 	s.registry = etcd.MustSetupEtcdRegister()
+	// }
 
 	if s.address == "" {
 		var err error
@@ -286,6 +294,7 @@ func (s *server) registerServer(addr *net.TCPAddr) error {
 	}
 
 	metaData := register.NodeMeta{
+		OrgID:        s.orgid,
 		Region:       s.region,
 		Namespace:    s.namespace,
 		ServiceName:  s.GetServiceName(),
