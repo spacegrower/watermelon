@@ -58,7 +58,7 @@ type infra struct {
 type Server func(register func(srv *grpc.Server), opts ...Option) *server
 
 // ClientConn is a function to create grpc client connection
-type ClientConn func(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error)
+type ClientConn func(serviceName string, opts ...ClientOptions) (*grpc.ClientConn, error)
 
 // NewServer is a function to create a server instance
 func NewServer() Server {

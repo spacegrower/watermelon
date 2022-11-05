@@ -17,7 +17,6 @@ type client struct {
 type clientOptions struct {
 	namespace   string
 	dialOptions []grpc.DialOption
-	context     context.Context
 	resolver    resolver.Resolver
 	timeout     time.Duration
 	region      string
@@ -39,7 +38,7 @@ func (*ClientConn) WithNamespace(ns string) ClientOptions {
 
 func (*ClientConn) WithDialTimeout(t time.Duration) ClientOptions {
 	return func(c *clientOptions) {
-		c.context, _ = context.WithTimeout(context.Background(), t)
+		c.timeout = t
 	}
 }
 
@@ -55,10 +54,10 @@ func (*ClientConn) WithRegion(region string) ClientOptions {
 	}
 }
 
-func newClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error) {
+func newClientConn(serviceName string, opts ...ClientOptions) (*grpc.ClientConn, error) {
 	options := &clientOptions{
 		namespace: "default",
-		context:   context.Background(),
+		timeout:   time.Second * 5,
 	}
 
 	for _, opt := range opts {
@@ -73,7 +72,9 @@ func newClientConn(serviceName string, opts ...ClientOptions) (grpc.ClientConnIn
 		options.resolver = etcd.MustSetupEtcdResolver(options.region)
 	}
 
-	cc, err := grpc.DialContext(options.context,
+	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
+	defer cancel()
+	cc, err := grpc.DialContext(ctx,
 		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(options.namespace, serviceName))),
 		options.dialOptions...)
 	if err != nil {

@@ -50,7 +50,7 @@ func main() {
 	newServer := infra.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
-	}, newServer.WithNamespace("test"))
+	}, newServer.WithNamespace("test"), newServer.WithRegion("jh"))
 
 	a := srv.Group()
 	a.Use(func(ctx context.Context) error {
