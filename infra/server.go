@@ -2,10 +2,13 @@ package infra
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,7 +53,7 @@ type serverInfo struct {
 	namespace string
 	name      string
 	address   string
-	port      int
+	port      string
 	tags      map[string]string
 }
 
@@ -192,12 +195,20 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	// 	s.registry = etcd.MustSetupEtcdRegister()
 	// }
 
+	addrAndPort := strings.Split(s.address, ":")
+	s.address = addrAndPort[0]
 	if s.address == "" {
 		var err error
 		if s.address, err = utils.GetHostIP(); err != nil {
 			panic(err)
 		}
-		s.address += ":"
+	}
+	if len(addrAndPort) == 2 {
+		var err error
+		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
+			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
+		}
+		s.port = addrAndPort[1]
 	}
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
@@ -207,7 +218,7 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 }
 
 func (s *server) Serve(notifications ...chan struct{}) error {
-	l, err := net.Listen("tcp", s.address)
+	l, err := net.Listen("tcp", ":"+s.port)
 	if err != nil {
 		return err
 	}
@@ -244,7 +255,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 	}()
 
 	time.Sleep(time.Millisecond * 100)
-	if err = s.registerServer(addr); err != nil {
+	if err = s.registerServer(s.address, addr.Port); err != nil {
 		panic(err)
 	}
 
@@ -288,8 +299,9 @@ func (s *server) GetServiceMethods() []grpc.MethodInfo {
 	return nil
 }
 
-func (s *server) registerServer(addr *net.TCPAddr) error {
+func (s *server) registerServer(host string, port int) error {
 	if s.registry == nil {
+		wlog.Warn("start server without register")
 		return nil
 	}
 
@@ -298,8 +310,8 @@ func (s *server) registerServer(addr *net.TCPAddr) error {
 		Region:       s.region,
 		Namespace:    s.namespace,
 		ServiceName:  s.GetServiceName(),
-		Host:         addr.IP.String(),
-		Port:         addr.Port,
+		Host:         host,
+		Port:         port,
 		Weight:       100,
 		Tags:         s.tags,
 		Methods:      nil,
