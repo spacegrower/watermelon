@@ -52,6 +52,7 @@ func main() {
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
 	}, newServer.WithNamespace("test"),
+		newServer.WithRegion("local"),
 		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()))
 
 	a := srv.Group()
@@ -65,7 +66,10 @@ func main() {
 		return nil
 	})
 
-	a.Use(func(ctx context.Context) error {
+	a.Handler(greeter.GreeterServer.SayHello)
+
+	b := a.Group()
+	b.Use(func(ctx context.Context) error {
 		fullMethod := middleware.GetFullMethodFrom(ctx)
 
 		if utils.PathBase(fullMethod) == "SayHelloAgain" {
@@ -73,8 +77,7 @@ func main() {
 		}
 		return nil
 	})
-
-	a.Handler(greeter.GreeterServer.SayHello, greeter.GreeterServer.SayHelloAgain)
+	b.Handler(greeter.GreeterServer.SayHelloAgain)
 
 	srv.RunUntil(syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 }

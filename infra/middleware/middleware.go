@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"container/list"
 	"context"
 
 	wctx "github.com/spacegrower/watermelon/infra/internal/context"
@@ -28,10 +29,9 @@ func GetFrom(c context.Context, key any) any {
 // Next a function to handle next middleware.
 // avoid using the same instance(context) for concurrent scenarios
 func Next(ctx context.Context) error {
-	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(Router)
-
-	if ok && !currentRouter.Next().IsNil() {
-		return currentRouter.Next().Deep(ctx)
+	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(*list.Element)
+	if ok {
+		return next(ctx, currentRouter.Next())
 	}
 	return nil
 }

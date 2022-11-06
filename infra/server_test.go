@@ -37,7 +37,7 @@ func Test_RandomListen(t *testing.T) {
 
 func Test_Server(t *testing.T) {
 	s := &server{
-		routers: map[string]middleware.Router{},
+		routers: make(map[string]middleware.Router),
 	}
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
 		s.Lock()

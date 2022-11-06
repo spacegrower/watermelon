@@ -29,6 +29,7 @@ func main() {
 	newClientConn := infra.NewClientConn()
 	cc, err := newClientConn(greeter.Greeter_ServiceDesc.ServiceName,
 		newClientConn.WithNamespace("test"),
+		newClientConn.WithRegion("local"),
 		newClientConn.WithGrpcOptions(grpc.WithInsecure()))
 	if err != nil {
 		panic(err)
