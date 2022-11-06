@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"net"
 	"reflect"
 	"runtime"
@@ -93,5 +94,72 @@ func Test_Server(t *testing.T) {
 	if str != "14test32" {
 		t.Fatal(str)
 	}
+	t.Log("successful")
+}
+
+func Test_ServerMiddlewareErrorReturn(t *testing.T) {
+	s := &server{
+		routers: make(map[string]middleware.Router),
+	}
+	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
+		s.Lock()
+		_, exist := s.routers[key]
+		s.Unlock()
+		return exist
+	}, func(key string, router middleware.Router) {
+		s.Lock()
+		s.routers[key] = router
+		s.Unlock()
+	})
+
+	errEp := errors.New("test error")
+	str := ""
+
+	s.Use(func(ctx context.Context) error {
+		return nil
+	})
+
+	g := s.Group()
+	g.Use(func(ctx context.Context) error {
+		if err := middleware.Next(ctx); err != nil {
+			return err
+		}
+		str = "1"
+		return nil
+	}, func(ctx context.Context) error {
+		if err := middleware.Next(ctx); err != nil {
+			return err
+		}
+		return nil
+	}, func(ctx context.Context) error {
+		middleware.SetInto(ctx, "verify", "123456")
+		return errEp
+	})
+
+	var testFunc grpc.UnaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
+		if middleware.GetFrom(ctx, "verify").(string) != "123456" {
+			t.Fatal("bad middleware")
+		}
+		return nil, nil
+	}
+
+	g.Handler(testFunc)
+
+	ctx := wmctx.Wrap(context.Background())
+	preset.SetGrpcRequestTypeInto(ctx, definition.UnaryRequest)
+	preset.SetUnaryHandlerInto(ctx, testFunc)
+
+	for _, v := range s.routers {
+		if err := v.Deep(ctx); err != nil {
+			if err != errEp {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if str != "" {
+		t.Fatal("failed")
+	}
+
 	t.Log("successful")
 }

@@ -3,7 +3,6 @@ package middleware
 import (
 	"container/list"
 	"context"
-	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -128,19 +127,7 @@ func (r *routerGroup) Use(m ...Middleware) {
 		}
 		r.router.PushBack(rr)
 		r.index++
-		// if r.router == nil {
-		// 	r.router = list.New()
-		// }
-		// if r.latestRouter == nil {
-		// 	r.router = rr
-		// 	r.latestRouter = rr
-		// 	continue
-		// }
-		// rr.index = r.latestRouter.index + 1
-		// r.latestRouter.next = rr
-		// r.latestRouter = rr
 	}
-	fmt.Println("router len", r.router.Len())
 	r.locker.Unlock()
 }
 
@@ -158,7 +145,7 @@ func (r *routerGroup) Handler(methods ...interface{}) {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
-	if r.router.Len() == 0 {
+	if r.router == nil {
 		return
 	}
 
