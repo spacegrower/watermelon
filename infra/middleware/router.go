@@ -110,6 +110,7 @@ type routerGroup struct {
 
 func NewRouterGroup(existRouter func(key string) bool, addRouter func(key string, router Router)) RouterGroup {
 	return &routerGroup{
+		router:      list.New(),
 		ExistRouter: existRouter,
 		AddRouter:   addRouter,
 	}
