@@ -48,9 +48,10 @@ func main() {
 		panic(err)
 	}
 
+	service := &GreeterSrv{}
 	newServer := infra.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
-		greeter.RegisterGreeterServer(srv, &GreeterSrv{})
+		greeter.RegisterGreeterServer(srv, service)
 	}, newServer.WithNamespace("test"),
 		newServer.WithRegion("local"),
 		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()))
@@ -66,7 +67,7 @@ func main() {
 		return nil
 	})
 
-	a.Handler(greeter.GreeterServer.SayHello)
+	a.Handler(service.SayHello)
 
 	b := a.Group()
 	b.Use(func(ctx context.Context) error {
@@ -77,7 +78,7 @@ func main() {
 		}
 		return nil
 	})
-	b.Handler(greeter.GreeterServer.SayHelloAgain)
+	b.Handler(service.SayHelloAgain)
 
 	srv.RunUntil(syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 }

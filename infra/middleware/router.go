@@ -179,10 +179,12 @@ func getGrpcFunctionName(i interface{}) string {
 		return false
 	})
 
+	var funcName string
 	if size := len(fields); size > 0 {
-		return fields[size-1]
+		funcName = fields[size-1]
 	}
-	return ""
+
+	return strings.TrimSuffix(funcName, "-fm")
 }
 
 func copyRouter(r *router) *router {
