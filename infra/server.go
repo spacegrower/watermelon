@@ -159,6 +159,12 @@ func (*Server) WithTags(tags map[string]string) Option {
 	}
 }
 
+func (s *Server) WithHttpServer(srv *http.Server) Option {
+	return func(s *server) {
+		s.httpServer = srv
+	}
+}
+
 func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{

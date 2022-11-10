@@ -20,8 +20,6 @@ func TestXxx(t *testing.T) {
 		Level: wlog.DebugLevel,
 	}))
 
-	infra.RegisterRegionProxy("jh", "grpcproxy.k8s.bs58i.baishancdnx.com:80")
-
 	// register etcd client
 	if err := infra.RegisterEtcdClient(clientv3.Config{
 		Endpoints: []string{"localhost:2379"},
@@ -33,7 +31,7 @@ func TestXxx(t *testing.T) {
 	cc, err := newClientConn(greeter.Greeter_ServiceDesc.ServiceName,
 		newClientConn.WithNamespace("test"),
 		newClientConn.WithGrpcOptions(grpc.WithInsecure()),
-		newClientConn.WithRegion("tz"))
+		newClientConn.WithRegion("test"))
 	if err != nil {
 		panic(err)
 	}
