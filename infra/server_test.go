@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"reflect"
 	"runtime"
@@ -108,6 +109,7 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 		return exist
 	}, func(key string, router middleware.Router) {
 		s.Lock()
+		fmt.Println(key)
 		s.routers[key] = router
 		s.Unlock()
 	})
@@ -121,6 +123,7 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 
 	g := s.Group()
 	g.Use(func(ctx context.Context) error {
+
 		if err := middleware.Next(ctx); err != nil {
 			return err
 		}
@@ -142,6 +145,10 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 		}
 		return nil, nil
 	}
+
+	s.Use(func(ctx context.Context) error {
+		panic("wrong")
+	})
 
 	g.Handler(testFunc)
 

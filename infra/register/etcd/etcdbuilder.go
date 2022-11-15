@@ -94,7 +94,7 @@ func (s *kvstore) Register() error {
 	}
 
 	s.once.Do(func() {
-		graceful.RegisterShutDownHandlers(func() {
+		graceful.RegisterPreShutDownHandlers(func() {
 			s.DeRegister()
 			s.client.Close()
 		})

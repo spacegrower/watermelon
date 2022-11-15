@@ -58,30 +58,6 @@ type router struct {
 	handler func(ctx context.Context) error
 }
 
-// func (r *router) IsNil() bool {
-// 	return r == nil
-// }
-
-// func (r *router) Next() Router {
-// 	return r.next
-// }
-
-// func (r *router) Deep(ctx context.Context) error {
-// 	if r.IsNil() {
-// 		return handler(ctx)
-// 	}
-// 	SetInto(ctx, definition.RouterIndex{}, r.index)
-// 	SetInto(ctx, definition.CurrentRouterKey{}, r)
-// 	if err := r.handler(ctx); err != nil {
-// 		return err
-// 	}
-
-// 	if r.Next().IsNil() || GetFrom(ctx, definition.RouterIndex{}).(int) == r.index {
-// 		return r.next.Deep(ctx)
-// 	}
-// 	return nil
-// }
-
 func handler(ctx context.Context) error {
 	var (
 		resp any
@@ -120,6 +96,7 @@ func (r *routerGroup) Use(m ...Middleware) {
 	if r.router == nil {
 		r.router = list.New()
 	}
+
 	r.locker.Lock()
 	for _, v := range m {
 		rr := &router{
@@ -135,11 +112,15 @@ func (r *routerGroup) Use(m ...Middleware) {
 func (r *routerGroup) Group() RouterGroup {
 	r.locker.Lock()
 	defer r.locker.Unlock()
-	return &routerGroup{
-		router:      &(*r.router),
+	n := &routerGroup{
+		router:      list.New(),
 		ExistRouter: r.ExistRouter,
 		AddRouter:   r.AddRouter,
 	}
+	if r.router != nil {
+		n.router.PushBackList(r.router)
+	}
+	return n
 }
 
 func (r *routerGroup) Handler(methods ...interface{}) {
@@ -160,7 +141,9 @@ func (r *routerGroup) Handler(methods ...interface{}) {
 			wlog.Panic("router: duplic handler")
 		}
 
-		r.AddRouter(funcName, &RouterV1{*r.router})
+		router := &RouterV1{}
+		router.list.PushBackList(r.router)
+		r.AddRouter(funcName, router)
 	}
 }
 

@@ -244,7 +244,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 		httpListener := m.Match(cmux.HTTP1Fast())
 		go func() {
 			wlog.Info("start http serve")
-			graceful.RegisterShutDownHandlers(func() {
+			graceful.RegisterPreShutDownHandlers(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 				defer cancel()
 				s.httpServer.Shutdown(ctx)
@@ -269,7 +269,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 		close(note)
 	}
 
-	graceful.RegisterShutDownHandlers(func() {
+	graceful.RegisterPreShutDownHandlers(func() {
 		s.grpcServer.GracefulStop()
 		wlog.Info("grpc server shutdown now")
 	})
