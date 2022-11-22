@@ -165,6 +165,12 @@ func (s *Server) WithHttpServer(srv *http.Server) Option {
 	}
 }
 
+func (s *Server) WithGrpcServerOptions(opts ...grpc.ServerOption) Option {
+	return func(s *server) {
+		s.grpcServerOptions = opts
+	}
+}
+
 func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s := &server{
 		serverInfo: serverInfo{
