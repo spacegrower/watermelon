@@ -148,26 +148,16 @@ func (r *routerGroup) Handler(methods ...interface{}) {
 }
 
 func getGrpcFunctionName(i interface{}) string {
-	var (
-		seps = []rune{'.'}
-	)
+	sep := rune('.')
 	fn := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
-
-	fields := strings.FieldsFunc(fn, func(sep rune) bool {
-		for _, s := range seps {
-			if sep == s {
-				return true
-			}
-		}
-		return false
+	fields := strings.FieldsFunc(fn, func(s rune) bool {
+		return sep == s
 	})
 
-	var funcName string
-	if size := len(fields); size > 0 {
-		funcName = fields[size-1]
+	if len(fields) > 0 {
+		return strings.Split(fields[len(fields)-1], "-")[0]
 	}
-
-	return strings.TrimSuffix(funcName, "-fm")
+	return ""
 }
 
 func copyRouter(r *router) *router {

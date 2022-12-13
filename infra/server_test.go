@@ -16,11 +16,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-func forGetName() {}
-func Test_getGrpcFunctionName(t *testing.T) {
+type TestForGetName struct{}
 
-	fn := runtime.FuncForPC(reflect.ValueOf(forGetName).Pointer()).Name()
+func (*TestForGetName) ForGetName() {}
+func Test_getGrpcFunctionName(t *testing.T) {
+	a := &TestForGetName{}
+	fn := runtime.FuncForPC(reflect.ValueOf(a.ForGetName).Pointer()).Name()
 	t.Log(fn)
+	t.Log()
 }
 
 func Test_RandomListen(t *testing.T) {
