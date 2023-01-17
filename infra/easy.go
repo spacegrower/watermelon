@@ -49,11 +49,6 @@ func ResolveProxy(region string) string {
 	return manager.ResolveProxy(region)
 }
 
-type infra struct {
-	NewServer     Server
-	NewClientConn ClientConn
-}
-
 // Server is a function to build grpc service
 type Server func(register func(srv *grpc.Server), opts ...Option) *server
 
