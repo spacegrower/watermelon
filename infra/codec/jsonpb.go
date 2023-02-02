@@ -24,8 +24,10 @@ func init() {
 
 func NewJsonCodec() *JsonCodec {
 	return &JsonCodec{
-		name:             "json",
-		MarshalOptions:   protojson.MarshalOptions{},
+		name: "json",
+		MarshalOptions: protojson.MarshalOptions{
+			EmitUnpopulated: true,
+		},
 		UnmarshalOptions: protojson.UnmarshalOptions{},
 	}
 }
