@@ -28,10 +28,7 @@ type RouterV1 struct {
 }
 
 func (r *RouterV1) Deep(ctx context.Context) error {
-	if r.list.Front() != nil {
-		return next(ctx, r.list.Front())
-	}
-	return nil
+	return next(ctx, r.list.Front())
 }
 
 func next(ctx context.Context, ele *list.Element) error {

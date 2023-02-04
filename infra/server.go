@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
+	_ "github.com/spacegrower/watermelon/infra/codec"
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	wctx "github.com/spacegrower/watermelon/infra/internal/context"
