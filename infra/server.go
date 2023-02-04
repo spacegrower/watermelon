@@ -225,6 +225,9 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
 	register(s.grpcServer)
+	if len(s.grpcServer.GetServiceInfo()) == 0 {
+		wlog.Panic("cannot register grpc service into grpc server")
+	}
 
 	return s
 }
