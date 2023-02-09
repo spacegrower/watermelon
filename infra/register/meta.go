@@ -8,7 +8,7 @@ type ServiceRegister interface {
 	Register() error
 	DeRegister() error
 	Close()
-	Init(NodeMeta) error
+	Append(NodeMeta) error
 }
 
 type NodeMetaKey struct{}

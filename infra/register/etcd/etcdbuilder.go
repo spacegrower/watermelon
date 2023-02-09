@@ -45,7 +45,7 @@ type kvstore struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	client     *clientv3.Client
-	meta       register.NodeMeta
+	metas      []register.NodeMeta
 	log        wlog.Logger
 	leaseID    clientv3.LeaseID
 }
@@ -65,9 +65,9 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
 	}
 }
 
-func (s *kvstore) Init(meta register.NodeMeta) error {
+func (s *kvstore) Append(meta register.NodeMeta) error {
 	// customize your register logic
-	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, 100, func(val string) (int32, error) {
+	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
 		res, err := strconv.Atoi(val)
 		if err != nil {
 			return 0, err
@@ -75,7 +75,7 @@ func (s *kvstore) Init(meta register.NodeMeta) error {
 		return int32(res), nil
 	})
 
-	s.meta = meta
+	s.metas = append(s.metas, meta)
 	return nil
 }
 
@@ -114,15 +114,17 @@ func (s *kvstore) register() error {
 
 		s.leaseID = resp.ID
 	}
-	registerKey := generateServiceKey(s.meta.OrgID, s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
-	if _, err := s.client.Put(ctx, registerKey, s.meta.ToJson(), clientv3.WithLease(s.leaseID)); err != nil {
-		return err
-	}
 
-	s.log.Info("service registered successful",
-		zap.String("namespace", s.meta.Namespace),
-		zap.String("name", s.meta.ServiceName),
-		zap.String("address", fmt.Sprintf("%s:%d", s.meta.Host, s.meta.Port)))
+	for _, v := range s.metas {
+		registerKey := generateServiceKey(v.OrgID, v.Namespace, v.ServiceName, v.Host, v.Port)
+		if _, err := s.client.Put(ctx, registerKey, v.ToJson(), clientv3.WithLease(s.leaseID)); err != nil {
+			return err
+		}
+		s.log.Info("service registered successful",
+			zap.String("namespace", v.Namespace),
+			zap.String("name", v.ServiceName),
+			zap.String("address", fmt.Sprintf("%s:%d", v.Host, v.Port)))
+	}
 
 	return nil
 }
@@ -133,8 +135,11 @@ func (s *kvstore) DeRegister() error {
 	if s.leaseID != clientv3.NoLease {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
-		registerKey := generateServiceKey(s.meta.OrgID, s.meta.Namespace, s.meta.ServiceName, s.meta.Host, s.meta.Port)
-		s.client.Delete(ctx, registerKey)
+		for _, v := range s.metas {
+			registerKey := generateServiceKey(v.OrgID, v.Namespace, v.ServiceName, v.Host, v.Port)
+			s.client.Delete(ctx, registerKey)
+		}
+
 		return s.revoke(s.leaseID)
 	}
 	return nil

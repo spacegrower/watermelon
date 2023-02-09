@@ -8,7 +8,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
-	"github.com/spacegrower/watermelon/etc/example/example/greeter"
+	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )

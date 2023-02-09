@@ -10,7 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/spacegrower/watermelon/etc/example/example/greeter"
+	"github.com/spacegrower/watermelon/etc/example/book"
+	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
@@ -34,6 +35,10 @@ func (g *GreeterSrv) SayHelloAgain(ctx context.Context, in *greeter.HelloRequest
 	}, nil
 }
 
+type BookSrv struct {
+	book.UnimplementedBookServer
+}
+
 func main() {
 	// install logger
 	wlog.SetGlobalLogger(wlog.NewLogger(&wlog.Config{
@@ -52,6 +57,7 @@ func main() {
 	newServer := infra.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, service)
+		book.RegisterBookServer(srv, &BookSrv{})
 	}, newServer.WithNamespace("test"),
 		newServer.WithRegion("local"),
 		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()))

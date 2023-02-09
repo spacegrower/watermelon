@@ -301,49 +301,39 @@ func (s *server) RunUntil(signals ...os.Signal) {
 	graceful.ShutDown()
 }
 
-func (s *server) GetServiceName() string {
-	for name := range s.grpcServer.GetServiceInfo() {
-		return name
-	}
-	return ""
-}
-
-func (s *server) GetServiceMethods() []grpc.MethodInfo {
-	for _, info := range s.grpcServer.GetServiceInfo() {
-		return info.Methods
-	}
-	return nil
-}
-
 func (s *server) registerServer(host string, port int) error {
 	if s.registry == nil {
 		wlog.Warn("start server without register")
 		return nil
 	}
 
-	metaData := register.NodeMeta{
-		OrgID:        s.orgid,
-		Region:       s.region,
-		Namespace:    s.namespace,
-		ServiceName:  s.GetServiceName(),
-		Host:         host,
-		Port:         port,
-		Weight:       100,
-		Tags:         s.tags,
-		Methods:      nil,
-		Runtime:      runtime.Version(),
-		Version:      version.Version,
-		RegisterTime: time.Now().Unix(),
+	newMeta := func() register.NodeMeta {
+		return register.NodeMeta{
+			OrgID:        s.orgid,
+			Region:       s.region,
+			Namespace:    s.namespace,
+			Host:         host,
+			Port:         port,
+			Weight:       100,
+			Tags:         s.tags,
+			Runtime:      runtime.Version(),
+			Version:      version.Version,
+			RegisterTime: time.Now().Unix(),
+		}
 	}
 
-	for _, v := range s.GetServiceMethods() {
-		metaData.Methods = append(metaData.Methods, register.GrpcMethodInfo{
-			Name:           v.Name,
-			IsClientStream: v.IsClientStream,
-			IsServerStream: v.IsServerStream,
-		})
+	for serviceName, method := range s.grpcServer.GetServiceInfo() {
+		meta := newMeta()
+		meta.ServiceName = serviceName
+		for _, v := range method.Methods {
+			meta.Methods = append(meta.Methods, register.GrpcMethodInfo{
+				Name:           v.Name,
+				IsClientStream: v.IsClientStream,
+				IsServerStream: v.IsServerStream,
+			})
+		}
+		s.registry.Append(meta)
 	}
 
-	s.registry.Init(metaData)
 	return s.registry.Register()
 }
