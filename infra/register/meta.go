@@ -1,31 +1,26 @@
 package register
 
-import (
-	"encoding/json"
-)
-
-type ServiceRegister interface {
+type ServiceRegister[T any] interface {
 	Register() error
 	DeRegister() error
 	Close()
-	Append(NodeMeta) error
+	Append(T) error
 }
 
 type NodeMetaKey struct{}
 
 type NodeMeta struct {
-	Region       string            `json:"region"`
-	OrgID        string            `json:"org_id"`
-	Namespace    string            `json:"namespace"`
-	ServiceName  string            `json:"service_name"`
-	Host         string            `json:"host"`
-	Port         int               `json:"port"`
-	Weight       int32             `json:"weight"`
-	Tags         map[string]string `json:"tags"`
-	Methods      []GrpcMethodInfo  `json:"methods"`
-	Runtime      string            `json:"runtime"`
-	Version      string            `json:"version"`
-	RegisterTime int64             `json:"register_time"`
+	// Region       string            `json:"region"`
+	// OrgID        string            `json:"org_id"`
+	// Namespace    string            `json:"namespace"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	// Weight       int32             `json:"weight"`
+	// Tags         map[string]string `json:"tags"`
+	ServiceName string           `json:"service_name"`
+	GrpcMethods []GrpcMethodInfo `json:"methods"`
+	Runtime     string           `json:"runtime"`
+	Version     string           `json:"version"`
 }
 
 type GrpcMethodInfo struct {
@@ -37,7 +32,11 @@ type GrpcMethodInfo struct {
 	IsServerStream bool `json:"is_server_stream"`
 }
 
-func (n NodeMeta) ToJson() string {
-	raw, _ := json.Marshal(n)
-	return string(raw)
-}
+// func (n NodeMeta) ToJson() string {
+// 	raw, _ := json.Marshal(n)
+// 	return string(raw)
+// }
+
+// func (n NodeMeta) RegisterKey() string {
+// 	return fmt.Sprintf("%s/%s/%s/node/%s:%d", n.OrgID, n.Namespace, n.ServiceName, n.Host, n.Port)
+// }

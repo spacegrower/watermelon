@@ -10,6 +10,7 @@ import (
 
 	cst "github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/internal/definition"
+	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
 
@@ -74,11 +75,20 @@ func handler(ctx context.Context) error {
 }
 
 type routerGroup struct {
+	serviceName string
 	router      *list.List
 	index       int
 	locker      sync.Mutex
 	ExistRouter func(key string) bool
 	AddRouter   func(key string, router Router)
+}
+
+func (r *routerGroup) routerName(method interface{}) string {
+	name := getGrpcFunctionName(method)
+	if name != "" && r.serviceName != "" {
+		return utils.PathJoin(r.serviceName, name)
+	}
+	return name
 }
 
 func NewRouterGroup(existRouter func(key string) bool, addRouter func(key string, router Router)) RouterGroup {
@@ -106,10 +116,15 @@ func (r *routerGroup) Use(m ...Middleware) {
 	r.locker.Unlock()
 }
 
-func (r *routerGroup) Group() RouterGroup {
+// GroupWithServiceName multi service used to distinguish different services of methods with the same name
+func (r *routerGroup) GroupWithServiceName(name string) RouterGroup {
 	r.locker.Lock()
 	defer r.locker.Unlock()
+	if name != "" && !strings.HasPrefix(name, "/") {
+		name = "/" + name
+	}
 	n := &routerGroup{
+		serviceName: name,
 		router:      list.New(),
 		ExistRouter: r.ExistRouter,
 		AddRouter:   r.AddRouter,
@@ -118,6 +133,10 @@ func (r *routerGroup) Group() RouterGroup {
 		n.router.PushBackList(r.router)
 	}
 	return n
+}
+
+func (r *routerGroup) Group() RouterGroup {
+	return r.GroupWithServiceName("")
 }
 
 func (r *routerGroup) Handler(methods ...interface{}) {
@@ -129,22 +148,25 @@ func (r *routerGroup) Handler(methods ...interface{}) {
 	}
 
 	for _, method := range methods {
-		funcName := getGrpcFunctionName(method)
-		if funcName == "" {
+		routerName := r.routerName(method)
+		if routerName == "" {
 			wlog.Panic("router: failed to patch handler function name")
 		}
 
-		if exist := r.ExistRouter(funcName); exist {
+		if exist := r.ExistRouter(routerName); exist {
 			wlog.Panic("router: duplic handler")
 		}
 
 		router := &RouterV1{}
 		router.list.PushBackList(r.router)
-		r.AddRouter(funcName, router)
+		r.AddRouter(routerName, router)
 	}
 }
 
 func getGrpcFunctionName(i interface{}) string {
+	if str, ok := i.(string); ok {
+		return str
+	}
 	sep := rune('.')
 	fn := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 	fields := strings.FieldsFunc(fn, func(s rune) bool {

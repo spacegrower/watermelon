@@ -82,7 +82,3 @@ func PathJoin(elem ...string) string {
 	}
 	return p
 }
-
-func PathBase(path string) string {
-	return filepath.ToSlash(filepath.Base(path))
-}

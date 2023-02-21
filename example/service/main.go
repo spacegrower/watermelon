@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"syscall"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -10,12 +11,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/spacegrower/watermelon"
 	"github.com/spacegrower/watermelon/etc/example/book"
 	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
-	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
 
@@ -54,7 +55,7 @@ func main() {
 	}
 
 	service := &GreeterSrv{}
-	newServer := infra.NewServer()
+	newServer := watermelon.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, service)
 		book.RegisterBookServer(srv, &BookSrv{})
@@ -64,6 +65,10 @@ func main() {
 
 	a := srv.Group()
 	a.Use(func(ctx context.Context) error {
+		if err := middleware.Next(ctx); err != nil {
+			fmt.Println("return error", err)
+			return err
+		}
 		if err := middleware.Next(ctx); err != nil {
 			fmt.Println("return error", err)
 			return err
@@ -79,7 +84,7 @@ func main() {
 	b.Use(func(ctx context.Context) error {
 		fullMethod := middleware.GetFullMethodFrom(ctx)
 
-		if utils.PathBase(fullMethod) == "SayHelloAgain" {
+		if filepath.Base(fullMethod) == "SayHelloAgain" {
 			return status.Error(codes.Aborted, "Don't say good things a second time")
 		}
 		return nil

@@ -1,0 +1,22 @@
+// protoc --go_out=. --go-grpc_out=. ./book.proto
+syntax = "proto3";
+
+package service;
+
+option go_package = "./book";
+
+// The greeting service definition.
+service Book {
+  // Sends a greeting
+  rpc GetBook (GetBookRequest) returns (GetBookReply) {}
+}
+
+// The request message containing the user's name.
+message GetBookRequest {
+  string name = 1;
+}
+
+// The response message containing the greetings
+message GetBookReply {
+  string message = 1;
+}

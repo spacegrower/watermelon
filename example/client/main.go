@@ -8,6 +8,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
+	"github.com/spacegrower/watermelon"
+	"github.com/spacegrower/watermelon/etc/example/book"
 	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -26,11 +28,11 @@ func main() {
 		panic(err)
 	}
 
-	newClientConn := infra.NewClientConn()
+	newClientConn := watermelon.NewClientConn()
 	cc, err := newClientConn(greeter.Greeter_ServiceDesc.ServiceName,
 		newClientConn.WithNamespace("test"),
 		newClientConn.WithRegion("local"),
-		newClientConn.WithGrpcOptions(grpc.WithInsecure()))
+		newClientConn.WithGrpcDialOptions(grpc.WithInsecure()))
 	if err != nil {
 		panic(err)
 	}
@@ -54,4 +56,18 @@ func main() {
 		fmt.Println(err)
 	}
 
+	bookcc, err := newClientConn(book.Book_ServiceDesc.ServiceName,
+		newClientConn.WithNamespace("test"),
+		newClientConn.WithRegion("local"),
+		newClientConn.WithGrpcDialOptions(grpc.WithInsecure()))
+	if err != nil {
+		panic(err)
+	}
+
+	bookclient := book.NewBookClient(bookcc)
+	_, err = bookclient.GetBook(context.Background(), &book.GetBookRequest{Name: "testbook"})
+	if err != nil {
+		// will got unimplemented
+		fmt.Println(err)
+	}
 }

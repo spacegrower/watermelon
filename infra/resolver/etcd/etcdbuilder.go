@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"time"
 
+	wb "github.com/spacegrower/watermelon/infra/balancer"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/attributes"
+	"google.golang.org/grpc/balancer"
+	"google.golang.org/grpc/balancer/base"
 	"google.golang.org/grpc/resolver"
 
 	"github.com/spacegrower/watermelon/infra/internal/manager"
@@ -21,18 +25,48 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
+func DefaultResolveMeta() ResolveMeta {
+	return ResolveMeta{
+		OrgID:     "default",
+		Region:    "default",
+		Namespace: "default",
+	}
+}
+
+type ResolveMeta struct {
+	OrgID     string
+	Region    string
+	Namespace string
+}
+
+func (r ResolveMeta) FullServiceName(srvName string) string {
+	target := filepath.ToSlash(filepath.Join(r.OrgID, r.Namespace, srvName))
+	path, _ := url.Parse(target)
+	if r.Region != "" {
+		query := path.Query()
+		query.Add("region", r.Region)
+		path.RawQuery = query.Encode()
+	}
+	return path.String()
+}
+
+func init() {
+	balancer.Register(base.NewBalancerBuilder(wb.WeightRobinName,
+		new(wb.WeightRobinBalancer[etcd.NodeMeta]),
+		base.Config{HealthCheck: true}))
+}
+
 const (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
 
-func MustSetupEtcdResolver(region string) wresolver.Resolver {
-	return NewEtcdResolver(manager.MustResolveEtcdClient(), region)
+func MustSetupEtcdResolver() wresolver.Resolver {
+	return NewEtcdResolver(manager.MustResolveEtcdClient())
 }
 
-func NewEtcdResolver(client *clientv3.Client, region string) wresolver.Resolver {
+func NewEtcdResolver(client *clientv3.Client) wresolver.Resolver {
 	ks := &kvstore{
 		client: client,
-		region: region,
 		log:    wlog.With(zap.String("component", "etcd-resolver")),
 	}
 
@@ -44,7 +78,6 @@ type kvstore struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	client    *clientv3.Client
-	namespace string
 	prefixKey string
 	log       wlog.Logger
 
@@ -69,6 +102,7 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 	if r.client == nil {
 		r.client = manager.MustResolveEtcdClient()
 	}
+
 	service := filepath.ToSlash(filepath.Base(target.URL.Path))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -78,7 +112,7 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 		client:    r.client,
 		prefixKey: r.buildResolveKey(target.URL.Path),
 		service:   service,
-		region:    r.region,
+		region:    target.URL.Query().Get("region"),
 		target:    target,
 		opts:      opts,
 		log:       wlog.With(zap.String("component", "etcd-resolver")),
@@ -150,7 +184,7 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 			if r.serviceConfig, err = parseServiceConfig(v.Value); err != nil {
 				return nil, err
 			}
-		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr register.NodeMeta, addr *resolver.Address) bool {
+		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr etcd.NodeMeta, addr *resolver.Address) bool {
 			if r.region == "" {
 				return true
 			}
@@ -201,9 +235,9 @@ func parseServiceConfig(val []byte) (*wresolver.CustomizeServiceConfig, error) {
 
 var filterError = errors.New("filter")
 
-func parseNodeInfo(key, val []byte, allowFunc func(attr register.NodeMeta, addr *resolver.Address) bool) (resolver.Address, error) {
+func parseNodeInfo(key, val []byte, allowFunc func(attr etcd.NodeMeta, addr *resolver.Address) bool) (resolver.Address, error) {
 	addr := resolver.Address{Addr: filepath.ToSlash(filepath.Base(string(key)))}
-	var attr register.NodeMeta
+	var attr etcd.NodeMeta
 	if err := json.Unmarshal(val, &attr); err != nil {
 		return addr, err
 	}
