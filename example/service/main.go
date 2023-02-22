@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"syscall"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -15,7 +16,6 @@ import (
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
-	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
 
@@ -79,7 +79,7 @@ func main() {
 	b.Use(func(ctx context.Context) error {
 		fullMethod := middleware.GetFullMethodFrom(ctx)
 
-		if utils.PathBase(fullMethod) == "SayHelloAgain" {
+		if filepath.Base(fullMethod) == "SayHelloAgain" {
 			return status.Error(codes.Aborted, "Don't say good things a second time")
 		}
 		return nil

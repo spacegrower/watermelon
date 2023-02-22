@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -70,7 +71,7 @@ func (s *server) interceptor() grpc.UnaryServerInterceptor {
 		preset.SetGrpcRequestTypeInto(c, definition.UnaryRequest)
 		preset.SetUnaryHandlerInto(c, handler)
 
-		method := utils.PathBase(info.FullMethod)
+		method := filepath.Base(info.FullMethod)
 
 		if router, exist := s.routers[method]; exist {
 			if err := router.Deep(c); err != nil {
@@ -104,7 +105,7 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 			})
 		})
 
-		method := utils.PathBase(info.FullMethod)
+		method := filepath.Base(info.FullMethod)
 
 		if router, exist := s.routers[method]; exist {
 			if err := router.Deep(c); err != nil {

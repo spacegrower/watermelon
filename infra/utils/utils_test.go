@@ -1,6 +1,8 @@
 package utils
 
-import "testing"
+import (
+	"testing"
+)
 
 func Test_PointerValue(t *testing.T) {
 	result := PointerValue(1)
