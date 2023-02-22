@@ -3,8 +3,6 @@ package context
 import (
 	"context"
 	"sync"
-
-	"github.com/spacegrower/watermelon/infra/internal/definition"
 )
 
 func Background() context.Context {
@@ -17,7 +15,7 @@ func Wrap(ctx context.Context) context.Context {
 	c := &Context{
 		Context: ctx,
 	}
-	c.Set(definition.ContextKey{}, c)
+	// c.Set(definition.ContextKey{}, c)
 	return c
 }
 
