@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package service;
+
+option go_package = "example/book";
+
+// The greeting service definition.
+service Book {
+  // Sends a greeting
+  rpc GetBooks (GetBooksRequest) returns (GetBooksReply) {}
+}
+
+// The request message containing the user's name.
+message GetBooksRequest {
+  string title = 1;
+}
+
+// The response message containing the greetings
+message GetBooksReply {
+  repeated string title = 1;
+}
