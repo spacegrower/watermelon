@@ -3,12 +3,14 @@ package etcd
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
+	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
@@ -51,9 +53,6 @@ type kvstore struct {
 	metas      []Meta
 	log        wlog.Logger
 	leaseID    clientv3.LeaseID
-	// metaParser interface {
-	// 	Parser(meta register.NodeMeta) Meta
-	// }
 }
 
 func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
@@ -73,13 +72,13 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister[NodeMeta]
 
 func (s *kvstore) Append(meta NodeMeta) error {
 	// customize your register logic
-	// meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
-	// 	res, err := strconv.Atoi(val)
-	// 	if err != nil {
-	// 		return 0, err
-	// 	}
-	// 	return int32(res), nil
-	// })
+	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
+		res, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, err
+		}
+		return int32(res), nil
+	})
 
 	s.metas = append(s.metas, meta)
 	return nil
