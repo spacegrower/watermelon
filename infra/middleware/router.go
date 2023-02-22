@@ -36,8 +36,8 @@ func next(ctx context.Context, ele *list.Element) error {
 	if ele == nil {
 		return handler(ctx)
 	}
-	r, ok := ele.Value.(*router)
-	if ok {
+
+	if r, ok := ele.Value.(*router); ok {
 		SetInto(ctx, definition.RouterIndex{}, r.index)
 		SetInto(ctx, definition.CurrentRouterKey{}, ele)
 		if err := r.handler(ctx); err != nil {
