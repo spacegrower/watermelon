@@ -2,7 +2,6 @@ package infra
 
 import (
 	"context"
-	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
@@ -11,62 +10,44 @@ import (
 	"github.com/spacegrower/watermelon/infra/resolver/etcd"
 )
 
-type client struct {
+type ClientServiceNameGenerator interface {
+	FullServiceName(srvName string) string
 }
 
-type clientOptions struct {
-	orgid       string
-	namespace   string
+type Client[T ClientServiceNameGenerator] struct {
+	CustomeMeta T
+}
+
+type COptions[T ClientServiceNameGenerator] struct {
+	CustomeMeta T
 	dialOptions []grpc.DialOption
 	resolver    resolver.Resolver
 	timeout     time.Duration
-	region      string
 }
 
-type ClientOptions func(c *clientOptions)
+type ClientOptions[T ClientServiceNameGenerator] func(c *COptions[T])
 
-func (*ClientConn) WithServiceResolver(r resolver.Resolver) ClientOptions {
-	return func(c *clientOptions) {
+func WithServiceResolver[T ClientServiceNameGenerator](r resolver.Resolver) ClientOptions[T] {
+	return func(c *COptions[T]) {
 		c.resolver = r
 	}
 }
 
-func (*ClientConn) WithOrg(id string) ClientOptions {
-	return func(c *clientOptions) {
-		c.orgid = id
-	}
-}
-
-func (*ClientConn) WithNamespace(ns string) ClientOptions {
-	return func(c *clientOptions) {
-		c.namespace = ns
-	}
-}
-
-func (*ClientConn) WithDialTimeout(t time.Duration) ClientOptions {
-	return func(c *clientOptions) {
+func WithDialTimeout[T ClientServiceNameGenerator](t time.Duration) ClientOptions[T] {
+	return func(c *COptions[T]) {
 		c.timeout = t
 	}
 }
 
-func (*ClientConn) WithGrpcOptions(opts ...grpc.DialOption) ClientOptions {
-	return func(c *clientOptions) {
+func WithGrpcDialOptions[T ClientServiceNameGenerator](opts ...grpc.DialOption) ClientOptions[T] {
+	return func(c *COptions[T]) {
 		c.dialOptions = opts
 	}
 }
 
-func (*ClientConn) WithRegion(region string) ClientOptions {
-	return func(c *clientOptions) {
-		c.region = region
-	}
-}
-
-func newClientConn(serviceName string, opts ...ClientOptions) (*grpc.ClientConn, error) {
-	options := &clientOptions{
-		orgid:     "default",
-		region:    "default",
-		namespace: "default",
-		timeout:   time.Second * 5,
+func NewClientConn[T ClientServiceNameGenerator](serviceName string, opts ...ClientOptions[T]) (*grpc.ClientConn, error) {
+	options := &COptions[T]{
+		timeout: time.Second * 5,
 	}
 
 	for _, opt := range opts {
@@ -78,13 +59,13 @@ func newClientConn(serviceName string, opts ...ClientOptions) (*grpc.ClientConn,
 	)
 
 	if options.resolver == nil {
-		options.resolver = etcd.MustSetupEtcdResolver(options.region)
+		options.resolver = etcd.MustSetupEtcdResolver()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
 	defer cancel()
 	cc, err := grpc.DialContext(ctx,
-		options.resolver.GenerateTarget(filepath.ToSlash(filepath.Join(options.orgid, options.namespace, serviceName))),
+		options.resolver.GenerateTarget(options.CustomeMeta.FullServiceName(serviceName)),
 		options.dialOptions...)
 	if err != nil {
 		return nil, err

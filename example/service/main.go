@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/spacegrower/watermelon"
 	"github.com/spacegrower/watermelon/etc/example/book"
 	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
@@ -54,7 +55,7 @@ func main() {
 	}
 
 	service := &GreeterSrv{}
-	newServer := infra.NewServer()
+	newServer := watermelon.NewServer()
 	srv := newServer(func(srv *grpc.Server) {
 		greeter.RegisterGreeterServer(srv, service)
 		book.RegisterBookServer(srv, &BookSrv{})
@@ -64,6 +65,10 @@ func main() {
 
 	a := srv.Group()
 	a.Use(func(ctx context.Context) error {
+		if err := middleware.Next(ctx); err != nil {
+			fmt.Println("return error", err)
+			return err
+		}
 		if err := middleware.Next(ctx); err != nil {
 			fmt.Println("return error", err)
 			return err

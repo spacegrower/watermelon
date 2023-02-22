@@ -13,6 +13,7 @@ import (
 	wmctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
+	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"google.golang.org/grpc"
 )
 
@@ -41,18 +42,18 @@ func Test_RandomListen(t *testing.T) {
 }
 
 func Test_Server(t *testing.T) {
-	s := &server{
+	s := &Srv[etcd.NodeMeta]{
 		routers: make(map[string]middleware.Router),
 	}
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
-		s.Lock()
+		s.mutex.Lock()
 		_, exist := s.routers[key]
-		s.Unlock()
+		s.mutex.Unlock()
 		return exist
 	}, func(key string, router middleware.Router) {
-		s.Lock()
+		s.mutex.Lock()
 		s.routers[key] = router
-		s.Unlock()
+		s.mutex.Unlock()
 	})
 
 	var str string
@@ -102,19 +103,19 @@ func Test_Server(t *testing.T) {
 }
 
 func Test_ServerMiddlewareErrorReturn(t *testing.T) {
-	s := &server{
+	s := &Srv[etcd.NodeMeta]{
 		routers: make(map[string]middleware.Router),
 	}
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
-		s.Lock()
+		s.mutex.Lock()
 		_, exist := s.routers[key]
-		s.Unlock()
+		s.mutex.Unlock()
 		return exist
 	}, func(key string, router middleware.Router) {
-		s.Lock()
+		s.mutex.Lock()
 		fmt.Println(key)
 		s.routers[key] = router
-		s.Unlock()
+		s.mutex.Unlock()
 	})
 
 	errEp := errors.New("test error")

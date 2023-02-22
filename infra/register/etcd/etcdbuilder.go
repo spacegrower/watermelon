@@ -3,14 +3,12 @@ package etcd
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
-	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
@@ -40,22 +38,30 @@ func generateServiceKey(orgid string, namespace, serviceName, nodeID string, por
 	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
 }
 
+type Meta interface {
+	RegisterKey() string
+	Value() string
+}
+
 type kvstore struct {
 	once       sync.Once
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	client     *clientv3.Client
-	metas      []register.NodeMeta
+	metas      []Meta
 	log        wlog.Logger
 	leaseID    clientv3.LeaseID
+	// metaParser interface {
+	// 	Parser(meta register.NodeMeta) Meta
+	// }
 }
 
-func MustSetupEtcdRegister() register.ServiceRegister {
+func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
 	client := manager.MustResolveEtcdClient()
 	return NewEtcdRegister(client)
 }
 
-func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
+func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister[NodeMeta] {
 	ctx, cancel := context.WithCancel(client.Ctx())
 	return &kvstore{
 		ctx:        ctx,
@@ -65,15 +71,15 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister {
 	}
 }
 
-func (s *kvstore) Append(meta register.NodeMeta) error {
+func (s *kvstore) Append(meta NodeMeta) error {
 	// customize your register logic
-	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
-		res, err := strconv.Atoi(val)
-		if err != nil {
-			return 0, err
-		}
-		return int32(res), nil
-	})
+	// meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
+	// 	res, err := strconv.Atoi(val)
+	// 	if err != nil {
+	// 		return 0, err
+	// 	}
+	// 	return int32(res), nil
+	// })
 
 	s.metas = append(s.metas, meta)
 	return nil
@@ -116,14 +122,14 @@ func (s *kvstore) register() error {
 	}
 
 	for _, v := range s.metas {
-		registerKey := generateServiceKey(v.OrgID, v.Namespace, v.ServiceName, v.Host, v.Port)
-		if _, err := s.client.Put(ctx, registerKey, v.ToJson(), clientv3.WithLease(s.leaseID)); err != nil {
+		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
+		value := v.Value()
+		if _, err := s.client.Put(ctx, registerKey, value, clientv3.WithLease(s.leaseID)); err != nil {
 			return err
 		}
 		s.log.Info("service registered successful",
-			zap.String("namespace", v.Namespace),
-			zap.String("name", v.ServiceName),
-			zap.String("address", fmt.Sprintf("%s:%d", v.Host, v.Port)))
+			zap.String("key", registerKey),
+			zap.String("meta", value))
 	}
 
 	return nil
@@ -136,7 +142,7 @@ func (s *kvstore) DeRegister() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
 		for _, v := range s.metas {
-			registerKey := generateServiceKey(v.OrgID, v.Namespace, v.ServiceName, v.Host, v.Port)
+			registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 			s.client.Delete(ctx, registerKey)
 		}
 

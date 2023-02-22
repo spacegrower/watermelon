@@ -1,8 +1,9 @@
+// protoc --go_out=. --go-grpc_out=. ./greeter.proto
 syntax = "proto3";
 
 package service;
 
-option go_package = "example/greeter";
+option go_package = "./greeter";
 
 // The greeting service definition.
 service Greeter {

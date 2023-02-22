@@ -14,10 +14,14 @@ type Middleware func(context.Context) error
 
 // SetInto a function to save the value into watermelon context
 func SetInto(c context.Context, key, val any) {
-	if ctx, ok := c.Value(definition.ContextKey{}).(*wctx.Context); ok {
+	if ctx, ok := c.(*wctx.Context); ok {
 		ctx.Set(key, val)
 	} else {
-		wlog.Panic("middleware: not found github.com/spacegrower/watermelon/infra/internal/context.Context from the given context")
+		if ctx, ok := c.Value(definition.ContextKey{}).(*wctx.Context); ok {
+			ctx.Set(key, val)
+		} else {
+			wlog.Panic("middleware: not found github.com/spacegrower/watermelon/infra/internal/context.Context from the given context")
+		}
 	}
 }
 

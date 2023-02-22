@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
 
 	_ "github.com/spacegrower/watermelon/infra/balancer"
 	"github.com/spacegrower/watermelon/infra/definition"
@@ -47,20 +46,4 @@ func RegisterRegionProxy(region, proxy string) {
 // ResolveProxy return region's proxy, if it exist
 func ResolveProxy(region string) string {
 	return manager.ResolveProxy(region)
-}
-
-// Server is a function to build grpc service
-type Server func(register func(srv *grpc.Server), opts ...Option) *server
-
-// ClientConn is a function to create grpc client connection
-type ClientConn func(serviceName string, opts ...ClientOptions) (*grpc.ClientConn, error)
-
-// NewServer is a function to create a server instance
-func NewServer() Server {
-	return Server(newServer)
-}
-
-// NewClientConn is a function to create a cc instance
-func NewClientConn() ClientConn {
-	return ClientConn(newClientConn)
 }

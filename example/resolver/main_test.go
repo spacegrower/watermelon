@@ -9,6 +9,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
+	"github.com/spacegrower/watermelon"
 	"github.com/spacegrower/watermelon/etc/example/greeter"
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -27,10 +28,10 @@ func TestXxx(t *testing.T) {
 		panic(err)
 	}
 
-	newClientConn := infra.NewClientConn()
+	newClientConn := watermelon.NewClientConn()
 	cc, err := newClientConn(greeter.Greeter_ServiceDesc.ServiceName,
 		newClientConn.WithNamespace("test"),
-		newClientConn.WithGrpcOptions(grpc.WithInsecure()),
+		newClientConn.WithGrpcDialOptions(grpc.WithInsecure()),
 		newClientConn.WithRegion("test"))
 	if err != nil {
 		panic(err)
