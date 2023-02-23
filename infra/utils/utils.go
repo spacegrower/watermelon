@@ -65,7 +65,7 @@ func NewContextWithSignal(signals ...os.Signal) context.Context {
 
 // GetEnvWithDefault a function to return system env value
 // return default value when env is empty
-func GetEnvWithDefault[T string | int](env string, def T, parse func(val string) (T, error)) T {
+func GetEnvWithDefault[T string | int | int32](env string, def T, parse func(val string) (T, error)) T {
 	if val := os.Getenv(env); val != "" {
 		if res, err := parse(val); err == nil {
 			return res
@@ -81,8 +81,4 @@ func PathJoin(elem ...string) string {
 		return "/" + p
 	}
 	return p
-}
-
-func PathBase(path string) string {
-	return filepath.ToSlash(filepath.Base(path))
 }

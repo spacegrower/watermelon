@@ -2,6 +2,7 @@ package safe
 
 import (
 	"github.com/spacegrower/watermelon/infra/wlog"
+
 	"go.uber.org/zap"
 )
 

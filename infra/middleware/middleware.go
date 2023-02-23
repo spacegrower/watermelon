@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"container/list"
 	"context"
 
 	wctx "github.com/spacegrower/watermelon/infra/internal/context"
@@ -13,10 +14,14 @@ type Middleware func(context.Context) error
 
 // SetInto a function to save the value into watermelon context
 func SetInto(c context.Context, key, val any) {
-	if ctx, ok := c.Value(definition.ContextKey{}).(*wctx.Context); ok {
+	if ctx, ok := c.(*wctx.Context); ok {
 		ctx.Set(key, val)
 	} else {
-		wlog.Panic("middleware: not found github.com/spacegrower/watermelon/infra/internal/context.Context from the given context")
+		if ctx, ok := c.Value(definition.ContextKey{}).(*wctx.Context); ok {
+			ctx.Set(key, val)
+		} else {
+			wlog.Panic("middleware: not found github.com/spacegrower/watermelon/infra/internal/context.Context from the given context")
+		}
 	}
 }
 
@@ -28,10 +33,9 @@ func GetFrom(c context.Context, key any) any {
 // Next a function to handle next middleware.
 // avoid using the same instance(context) for concurrent scenarios
 func Next(ctx context.Context) error {
-	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(Router)
-
-	if ok && !currentRouter.Next().IsNil() {
-		return currentRouter.Next().Deep(ctx)
+	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(*list.Element)
+	if ok {
+		return next(ctx, currentRouter.Next())
 	}
 	return nil
 }

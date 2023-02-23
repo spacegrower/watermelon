@@ -2,24 +2,29 @@ package infra
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
+	_ "github.com/spacegrower/watermelon/infra/codec"
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	wctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register"
-	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/version"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -30,31 +35,40 @@ type ServerConfig struct {
 	ListenOn  string
 }
 
-type server struct {
-	serverInfo
-	sync.Mutex
-
-	grpcServer        *grpc.Server
+type SrvInfo[T interface {
+	WithMeta(register.NodeMeta) T
+}] struct {
+	address           string
+	CustomInfo        T
 	grpcServerOptions []grpc.ServerOption
+	httpServer        *http.Server
+	registry          register.ServiceRegister[T]
+}
 
-	httpServer *http.Server
+type Srv[T interface {
+	WithMeta(register.NodeMeta) T
+}] struct {
+	*SrvInfo[T]
+	Port  string
+	mutex sync.Mutex
 
-	registry register.ServiceRegister
+	grpcServer *grpc.Server
 
 	middleware.RouterGroup
 	routers map[string]middleware.Router
 }
 
 type serverInfo struct {
+	orgid     string
 	region    string
 	namespace string
 	name      string
 	address   string
-	port      int
+	port      string
 	tags      map[string]string
 }
 
-func (s *server) interceptor() grpc.UnaryServerInterceptor {
+func (s *Srv[T]) interceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (resp interface{}, err error) {
@@ -66,15 +80,20 @@ func (s *server) interceptor() grpc.UnaryServerInterceptor {
 		preset.SetGrpcRequestTypeInto(c, definition.UnaryRequest)
 		preset.SetUnaryHandlerInto(c, handler)
 
-		method := utils.PathBase(info.FullMethod)
-
-		if router, exist := s.routers[method]; exist {
-			if err := router.Deep(c); err != nil {
-				return nil, err
+		var (
+			router middleware.Router
+			exist  bool
+		)
+		if router, exist = s.routers[info.FullMethod]; !exist {
+			if router, exist = s.routers[filepath.Base(info.FullMethod)]; !exist {
+				return handler(c, req)
 			}
-			return middleware.GetResponseFrom(c), nil
 		}
-		return handler(c, req)
+
+		if err := router.Deep(c); err != nil {
+			return nil, err
+		}
+		return middleware.GetResponseFrom(c), nil
 	}
 }
 
@@ -87,12 +106,12 @@ func (s *fakeServerStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
+func (s *Srv[T]) streamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		c := wctx.Wrap(ss.Context())
 
 		preset.SetFullMethodInto(c, info.FullMethod)
-		preset.SetGrpcRequestTypeInto(c, definition.UnaryRequest)
+		preset.SetGrpcRequestTypeInto(c, definition.StreamRequest)
 		preset.SetStreamHandlerInto(c, func() error {
 			return handler(srv, &fakeServerStream{
 				ctx:          c,
@@ -100,75 +119,82 @@ func (s *server) streamInterceptor() grpc.StreamServerInterceptor {
 			})
 		})
 
-		method := utils.PathBase(info.FullMethod)
-
-		if router, exist := s.routers[method]; exist {
-			if err := router.Deep(c); err != nil {
-				return err
+		var (
+			router middleware.Router
+			exist  bool
+		)
+		if router, exist = s.routers[info.FullMethod]; !exist {
+			if router, exist = s.routers[filepath.Base(info.FullMethod)]; !exist {
+				return handler(srv, ss)
 			}
-			return nil
 		}
-		return handler(srv, ss)
+
+		if err := router.Deep(c); err != nil {
+			return err
+		}
+		return nil
 	}
 }
 
-type Option func(s *server)
+type Option[T interface {
+	WithMeta(register.NodeMeta) T
+}] func(s *SrvInfo[T])
 
-func (*Server) WithNamespace(ns string) Option {
-	return func(s *server) {
-		s.serverInfo.namespace = ns
+// func (*Server) WithName(name string) Option {
+// 	return func(s *server) {
+// 		s.serverInfo.name = name
+// 	}
+// }
+
+func WithAddress[T interface {
+	WithMeta(register.NodeMeta) T
+}](addr string) Option[T] {
+	return func(s *SrvInfo[T]) {
+		s.address = addr
 	}
 }
 
-func (*Server) WithRegion(region string) Option {
-	return func(s *server) {
-		s.serverInfo.region = region
-	}
-}
-
-func (*Server) WithName(name string) Option {
-	return func(s *server) {
-		s.serverInfo.name = name
-	}
-}
-
-func (*Server) WithAddress(addr string) Option {
-	return func(s *server) {
-		s.serverInfo.address = addr
-	}
-}
-
-func (*Server) WithServiceRegister(r register.ServiceRegister) Option {
-	return func(s *server) {
+func WithServiceRegister[T interface {
+	WithMeta(register.NodeMeta) T
+}](r register.ServiceRegister[T]) Option[T] {
+	return func(s *SrvInfo[T]) {
 		s.registry = r
 	}
 }
 
-func (*Server) WithTags(tags map[string]string) Option {
-	return func(s *server) {
-		s.tags = tags
+func WithHttpServer[T interface {
+	WithMeta(register.NodeMeta) T
+}](srv *http.Server) Option[T] {
+	return func(s *SrvInfo[T]) {
+		s.httpServer = srv
 	}
 }
 
-func newServer(register func(srv *grpc.Server), opts ...Option) *server {
-	s := &server{
-		serverInfo: serverInfo{
-			region:    "default",
-			namespace: "default",
-			name:      "default",
-		},
+func WithGrpcServerOptions[T interface {
+	WithMeta(register.NodeMeta) T
+}](opts ...grpc.ServerOption) Option[T] {
+	return func(s *SrvInfo[T]) {
+		s.grpcServerOptions = opts
+	}
+}
+
+func NewServer[T interface {
+	WithMeta(register.NodeMeta) T
+}](register func(srv *grpc.Server), opts ...Option[T]) *Srv[T] {
+	s := &Srv[T]{
+		SrvInfo: new(SrvInfo[T]),
 		routers: make(map[string]middleware.Router),
 	}
 
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
-		s.Lock()
+		s.mutex.Lock()
 		_, exist := s.routers[key]
-		s.Unlock()
+		s.mutex.Unlock()
 		return exist
 	}, func(key string, router middleware.Router) {
-		s.Lock()
+		s.mutex.Lock()
 		s.routers[key] = router
-		s.Unlock()
+		s.mutex.Unlock()
 	})
 
 	baseGrpcServerOptions := []grpc.ServerOption{
@@ -177,29 +203,59 @@ func newServer(register func(srv *grpc.Server), opts ...Option) *server {
 	s.grpcServerOptions = append(baseGrpcServerOptions, s.grpcServerOptions...)
 
 	for _, opt := range opts {
-		opt(s)
+		opt(s.SrvInfo)
 	}
 
-	if s.registry == nil {
-		s.registry = etcd.MustSetupEtcdRegister()
-	}
+	// 有些场景可能不需要服务注册
+	// if s.registry == nil {
+	// 	s.registry = etcd.MustSetupEtcdRegister()
+	// }
 
+	addrAndPort := strings.Split(s.address, ":")
+	s.address = addrAndPort[0]
 	if s.address == "" {
 		var err error
 		if s.address, err = utils.GetHostIP(); err != nil {
 			panic(err)
 		}
-		s.address += ":"
+	}
+	if len(addrAndPort) == 2 {
+		var err error
+		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
+			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
+		}
+		s.Port = addrAndPort[1]
 	}
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
+
 	register(s.grpcServer)
+	reflection.Register(s.grpcServer)
+
+	if len(s.grpcServer.GetServiceInfo()) == 0 {
+		wlog.Panic("cannot register grpc service into grpc server")
+	}
 
 	return s
 }
 
-func (s *server) Serve(notifications ...chan struct{}) error {
-	l, err := net.Listen("tcp", s.address)
+func (s *Srv[T]) autoSetupAvailableMethods() {
+	for srvName, srvInfo := range s.grpcServer.GetServiceInfo() {
+		for _, method := range srvInfo.Methods {
+			if _, exist := s.routers[method.Name]; !exist {
+				fullMethds := utils.PathJoin(srvName, method.Name)
+				if _, exist := s.routers[fullMethds]; !exist {
+					s.Handler(fullMethds)
+				}
+			}
+		}
+	}
+}
+
+func (s *Srv[T]) Serve() error {
+	s.autoSetupAvailableMethods()
+
+	l, err := net.Listen("tcp", ":"+s.Port)
 	if err != nil {
 		return err
 	}
@@ -219,7 +275,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 		httpListener := m.Match(cmux.HTTP1Fast())
 		go func() {
 			wlog.Info("start http serve")
-			graceful.RegisterShutDownHandlers(func() {
+			graceful.RegisterPreShutDownHandlers(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 				defer cancel()
 				s.httpServer.Shutdown(ctx)
@@ -236,15 +292,11 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 	}()
 
 	time.Sleep(time.Millisecond * 100)
-	if err = s.registerServer(addr); err != nil {
+	if err = s.registerServer(s.address, addr.Port); err != nil {
 		panic(err)
 	}
 
-	for _, note := range notifications {
-		close(note)
-	}
-
-	graceful.RegisterShutDownHandlers(func() {
+	graceful.RegisterPreShutDownHandlers(func() {
 		s.grpcServer.GracefulStop()
 		wlog.Info("grpc server shutdown now")
 	})
@@ -253,7 +305,7 @@ func (s *server) Serve(notifications ...chan struct{}) error {
 }
 
 // RunUntil start server and shutdown until receive signals
-func (s *server) RunUntil(signals ...os.Signal) {
+func (s *Srv[T]) RunUntil(signals ...os.Signal) {
 	ctx, cancel := context.WithCancel(utils.NewContextWithSignal(signals...))
 	go func() {
 		defer cancel()
@@ -266,47 +318,40 @@ func (s *server) RunUntil(signals ...os.Signal) {
 	graceful.ShutDown()
 }
 
-func (s *server) GetServiceName() string {
-	for name := range s.grpcServer.GetServiceInfo() {
-		return name
-	}
-	return ""
-}
-
-func (s *server) GetServiceMethods() []grpc.MethodInfo {
-	for _, info := range s.grpcServer.GetServiceInfo() {
-		return info.Methods
-	}
-	return nil
-}
-
-func (s *server) registerServer(addr *net.TCPAddr) error {
+func (s *Srv[T]) registerServer(host string, port int) error {
 	if s.registry == nil {
+		wlog.Warn("start server without register")
 		return nil
 	}
 
 	metaData := register.NodeMeta{
-		Region:       s.region,
-		Namespace:    s.namespace,
-		ServiceName:  s.GetServiceName(),
-		Host:         addr.IP.String(),
-		Port:         addr.Port,
-		Weight:       100,
-		Tags:         s.tags,
-		Methods:      nil,
-		Runtime:      runtime.Version(),
-		Version:      version.V,
-		RegisterTime: time.Now().Unix(),
+		// OrgID:        s.orgid,
+		// Region:       s.region,
+		// Namespace:    s.namespace,
+		Host: host,
+		Port: port,
+		// Weight:       100,
+		// Tags:         s.tags,
+		Runtime: runtime.Version(),
+		Version: version.Version,
 	}
 
-	for _, v := range s.GetServiceMethods() {
-		metaData.Methods = append(metaData.Methods, register.GrpcMethodInfo{
-			Name:           v.Name,
-			IsClientStream: v.IsClientStream,
-			IsServerStream: v.IsServerStream,
-		})
+	for serviceName, serviceInfo := range s.grpcServer.GetServiceInfo() {
+		if strings.HasPrefix(serviceName, "grpc.reflection") {
+			// grpc reflection is a sidecar reflection methods, can not register
+			continue
+		}
+		metaData.ServiceName = serviceName
+		for _, method := range serviceInfo.Methods {
+			metaData.GrpcMethods = append(metaData.GrpcMethods, register.GrpcMethodInfo{
+				Name:           method.Name,
+				IsClientStream: method.IsClientStream,
+				IsServerStream: method.IsServerStream,
+			})
+		}
+
+		s.registry.Append(s.CustomInfo.WithMeta(metaData))
 	}
 
-	s.registry.Init(metaData)
 	return s.registry.Register()
 }

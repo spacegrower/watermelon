@@ -16,7 +16,7 @@ type Resolver interface {
 	GenerateTarget(serviceName string) string
 }
 
-var defaultGrpcServiceConfig = fmt.Sprintf(`{"loadBalancingConfig":[{"%s":{}}]}`, balancer.WeightRobinName)
+var defaultGrpcServiceConfig = fmt.Sprintf(`{"balancer":"%s"}`, balancer.WeightRobinName)
 
 // GetDefaultGrpcServiceConfig is a function to return default grpc service config
 // as specified here https://github.com/grpc/grpc/blob/master/doc/service_config.md

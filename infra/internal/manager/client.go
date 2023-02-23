@@ -3,9 +3,10 @@ package manager
 import (
 	"sync"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
+
 	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/wlog"
-	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 var (
@@ -14,10 +15,27 @@ var (
 
 	proxyLocker  sync.RWMutex
 	proxyManager map[string]string
+
+	kvLocker sync.RWMutex
+	kvstore  map[any]any
 )
 
 func init() {
 	clientManager = make(map[any]any)
+	proxyManager = make(map[string]string)
+	kvstore = make(map[any]any)
+}
+
+func RegisterKV(key, val any) {
+	kvLocker.Lock()
+	kvstore[key] = val
+	kvLocker.Unlock()
+}
+
+func ResolveKV(key any) any {
+	kvLocker.RLocker().Lock()
+	defer kvLocker.RLocker().Unlock()
+	return kvstore[key]
 }
 
 func RegisterClient(key, client any) {

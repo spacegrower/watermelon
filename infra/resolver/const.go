@@ -7,4 +7,7 @@ var (
 	NilAddress = resolver.Address{
 		Addr: "not found",
 	}
+	Disabled = resolver.Address{
+		Addr: "disabled",
+	}
 )

@@ -1,12 +1,23 @@
 package infra
 
 import (
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/grpc"
+	"strings"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
+
+	_ "github.com/spacegrower/watermelon/infra/balancer"
 	"github.com/spacegrower/watermelon/infra/definition"
+	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 )
+
+// RegisterETCDRegisterPrefixKey a function to change default register(etcd) prefix key
+func RegisterETCDRegisterPrefixKey(prefix string) {
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	manager.RegisterKV(ide.ETCDPrefixKey{}, prefix)
+}
 
 // ResolveEtcdClient a function to register etcd client to watermelon global
 func RegisterEtcdClient(etcdConfig clientv3.Config) error {
@@ -35,25 +46,4 @@ func RegisterRegionProxy(region, proxy string) {
 // ResolveProxy return region's proxy, if it exist
 func ResolveProxy(region string) string {
 	return manager.ResolveProxy(region)
-}
-
-type infra struct {
-	NewServer     Server
-	NewClientConn ClientConn
-}
-
-// Server is a function to build grpc service
-type Server func(register func(srv *grpc.Server), opts ...Option) *server
-
-// ClientConn is a function to create grpc client connection
-type ClientConn func(serviceName string, opts ...ClientOptions) (grpc.ClientConnInterface, error)
-
-// NewServer is a function to create a server instance
-func NewServer() Server {
-	return Server(newServer)
-}
-
-// NewClientConn is a function to create a cc instance
-func NewClientConn() ClientConn {
-	return ClientConn(newClientConn)
 }
