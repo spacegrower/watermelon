@@ -1,4 +1,4 @@
-package etcd
+package firemelon
 
 import (
 	"encoding/json"
@@ -11,13 +11,13 @@ import (
 	"github.com/spacegrower/watermelon/infra/utils"
 )
 
+// register node meta
 type NodeMeta struct {
-	Region       string            `json:"region"`
-	OrgID        string            `json:"org_id"`
-	Namespace    string            `json:"namespace"`
-	Weight       int32             `json:"weight"`
-	Tags         map[string]string `json:"tags"`
-	RegisterTime int64             `json:"register_time"`
+	OrgID        string
+	System       string
+	Region       string
+	Weight       int32
+	RegisterTime int64
 	register.NodeMeta
 }
 
@@ -43,21 +43,5 @@ func (n NodeMeta) Value() string {
 }
 
 func (n NodeMeta) RegisterKey() string {
-	return fmt.Sprintf("%s/%s/%s/node/%s:%d", n.OrgID, n.Namespace, n.ServiceName, n.Host, n.Port)
-}
-
-func (n NodeMeta) Weigth() int32 {
-	return n.Weight
-}
-
-func (n NodeMeta) Service() string {
-	return n.ServiceName
-}
-
-func (n NodeMeta) Methods() []string {
-	var methods []string
-	for _, v := range n.GrpcMethods {
-		methods = append(methods, v.Name)
-	}
-	return methods
+	return fmt.Sprintf("%s/%s/%s/node/%s:%d", n.OrgID, n.System, n.ServiceName, n.Host, n.Port)
 }

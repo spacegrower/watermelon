@@ -56,47 +56,68 @@ func init() {
 		base.Config{HealthCheck: true}))
 }
 
-const (
+var (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
 
-func MustSetupEtcdResolver() wresolver.Resolver {
-	return NewEtcdResolver(manager.MustResolveEtcdClient())
+type AllowFuncType[T any] func(query url.Values, attr T, addr *resolver.Address) bool
+
+func DefaultAllowFunc(query url.Values, attr etcd.NodeMeta, addr *resolver.Address) bool {
+	region := query.Get("region")
+	if region == "" {
+		return true
+	}
+
+	if attr.Region != region {
+		proxy := manager.ResolveProxy(attr.Region)
+		if proxy == "" {
+			return false
+		}
+
+		addr.Addr = proxy
+		addr.ServerName = proxy
+	}
+	return true
 }
 
-func NewEtcdResolver(client *clientv3.Client) wresolver.Resolver {
-	ks := &kvstore{
-		client: client,
-		log:    wlog.With(zap.String("component", "etcd-resolver")),
+func MustSetupEtcdResolver() wresolver.Resolver {
+	return NewEtcdResolver(manager.MustResolveEtcdClient(), DefaultAllowFunc)
+}
+
+func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresolver.Resolver {
+	ks := &kvstore[T]{
+		client:    client,
+		log:       wlog.With(zap.String("component", "etcd-resolver")),
+		allowFunc: af,
 	}
 
 	resolver.Register(ks)
 	return ks
 }
 
-type kvstore struct {
+type kvstore[T any] struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	client    *clientv3.Client
 	prefixKey string
 	log       wlog.Logger
 
-	region string
+	allowFunc AllowFuncType[T]
 }
 
-func (r *kvstore) Scheme() string {
+func (r *kvstore[T]) Scheme() string {
 	return ETCDResolverScheme
 }
 
-func (r *kvstore) GenerateTarget(fullServiceName string) string {
+func (r *kvstore[T]) GenerateTarget(fullServiceName string) string {
 	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", fullServiceName)
 }
 
-func (r *kvstore) buildResolveKey(service string) string {
+func (r *kvstore[T]) buildResolveKey(service string) string {
 	return filepath.ToSlash(filepath.Join(etcd.GetETCDPrefixKey(), service)) + "/"
 }
 
-func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (
+func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (
 	resolver.Resolver, error) {
 
 	if r.client == nil {
@@ -106,16 +127,16 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 	service := filepath.ToSlash(filepath.Base(target.URL.Path))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	rr := &etcdResolver{
+	rr := &etcdResolver[T]{
 		ctx:       ctx,
 		cancel:    cancel,
 		client:    r.client,
 		prefixKey: r.buildResolveKey(target.URL.Path),
 		service:   service,
-		region:    target.URL.Query().Get("region"),
 		target:    target,
 		opts:      opts,
 		log:       wlog.With(zap.String("component", "etcd-resolver")),
+		allowFunc: r.allowFunc,
 	}
 
 	update := func() {
@@ -148,27 +169,28 @@ func (r *kvstore) Build(target resolver.Target, cc resolver.ClientConn, opts res
 	return rr, nil
 }
 
-type etcdResolver struct {
+type etcdResolver[T any] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	client        *clientv3.Client
 	prefixKey     string
 	service       string
-	region        string
 	target        resolver.Target
 	cc            resolver.ClientConn
 	opts          resolver.BuildOptions
 	log           wlog.Logger
 	serviceConfig *wresolver.CustomizeServiceConfig
+
+	allowFunc AllowFuncType[T]
 }
 
-func (r *etcdResolver) ResolveNow(_ resolver.ResolveNowOptions) {}
-func (r *etcdResolver) Close() {
+func (r *etcdResolver[T]) ResolveNow(_ resolver.ResolveNowOptions) {}
+func (r *etcdResolver[T]) Close() {
 	r.cancel()
 }
 
-func (r *etcdResolver) resolve() ([]resolver.Address, error) {
+func (r *etcdResolver[T]) resolve() ([]resolver.Address, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
 
@@ -184,22 +206,8 @@ func (r *etcdResolver) resolve() ([]resolver.Address, error) {
 			if r.serviceConfig, err = parseServiceConfig(v.Value); err != nil {
 				return nil, err
 			}
-		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr etcd.NodeMeta, addr *resolver.Address) bool {
-			if r.region == "" {
-				return true
-			}
-
-			if attr.Region != r.region {
-				proxy := manager.ResolveProxy(attr.Region)
-				if proxy == "" {
-					return false
-				}
-
-				addr.Addr = proxy
-				addr.ServerName = proxy
-			}
-			return true
-
+		} else if addr, err := parseNodeInfo(v.Key, v.Value, func(attr T, addr *resolver.Address) bool {
+			return r.allowFunc(r.target.URL.Query(), attr, addr)
 		}); err != nil {
 			if err != filterError {
 				r.log.Error("parse node info with error", zap.Error(err))
@@ -235,9 +243,9 @@ func parseServiceConfig(val []byte) (*wresolver.CustomizeServiceConfig, error) {
 
 var filterError = errors.New("filter")
 
-func parseNodeInfo(key, val []byte, allowFunc func(attr etcd.NodeMeta, addr *resolver.Address) bool) (resolver.Address, error) {
+func parseNodeInfo[T any](key, val []byte, allowFunc func(attr T, addr *resolver.Address) bool) (resolver.Address, error) {
 	addr := resolver.Address{Addr: filepath.ToSlash(filepath.Base(string(key)))}
-	var attr etcd.NodeMeta
+	var attr T
 	if err := json.Unmarshal(val, &attr); err != nil {
 		return addr, err
 	}
@@ -251,7 +259,7 @@ func parseNodeInfo(key, val []byte, allowFunc func(attr etcd.NodeMeta, addr *res
 	return addr, nil
 }
 
-func (r *etcdResolver) watch(update func()) {
+func (r *etcdResolver[T]) watch(update func()) {
 	var opts []clientv3.OpOption
 	opts = append(opts, clientv3.WithPrefix())
 

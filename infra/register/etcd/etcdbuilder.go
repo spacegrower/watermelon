@@ -2,15 +2,12 @@ package etcd
 
 import (
 	"context"
-	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
-	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/graceful"
 	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
@@ -24,10 +21,6 @@ const (
 	liveTime int64 = 5
 )
 
-var (
-	DefaultOrgID = 0
-)
-
 func init() {
 	manager.RegisterKV(ide.ETCDPrefixKey{}, "/watermelon")
 }
@@ -36,33 +29,33 @@ func GetETCDPrefixKey() string {
 	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
 }
 
-func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
-	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
-}
+// func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
+// 	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
+// }
 
 type Meta interface {
 	RegisterKey() string
 	Value() string
 }
 
-type kvstore struct {
+type kvstore[T Meta] struct {
 	once       sync.Once
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	client     *clientv3.Client
-	metas      []Meta
+	metas      []T
 	log        wlog.Logger
 	leaseID    clientv3.LeaseID
 }
 
 func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
 	client := manager.MustResolveEtcdClient()
-	return NewEtcdRegister(client)
+	return NewEtcdRegister[NodeMeta](client)
 }
 
-func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister[NodeMeta] {
+func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T] {
 	ctx, cancel := context.WithCancel(client.Ctx())
-	return &kvstore{
+	return &kvstore[T]{
 		ctx:        ctx,
 		cancelFunc: cancel,
 		client:     client,
@@ -70,21 +63,21 @@ func NewEtcdRegister(client *clientv3.Client) register.ServiceRegister[NodeMeta]
 	}
 }
 
-func (s *kvstore) Append(meta NodeMeta) error {
+func (s *kvstore[T]) Append(meta T) error {
 	// customize your register logic
-	meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
-		res, err := strconv.Atoi(val)
-		if err != nil {
-			return 0, err
-		}
-		return int32(res), nil
-	})
+	// meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
+	// 	res, err := strconv.Atoi(val)
+	// 	if err != nil {
+	// 		return 0, err
+	// 	}
+	// 	return int32(res), nil
+	// })
 
 	s.metas = append(s.metas, meta)
 	return nil
 }
 
-func (s *kvstore) Register() error {
+func (s *kvstore[T]) Register() error {
 	s.log.Debug("start register")
 	var err error
 	if err = s.register(); err != nil {
@@ -108,7 +101,7 @@ func (s *kvstore) Register() error {
 	return nil
 }
 
-func (s *kvstore) register() error {
+func (s *kvstore[T]) register() error {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
 	defer cancel()
 	if s.leaseID == clientv3.NoLease {
@@ -134,7 +127,7 @@ func (s *kvstore) register() error {
 	return nil
 }
 
-func (s *kvstore) DeRegister() error {
+func (s *kvstore[T]) DeRegister() error {
 	defer s.cancelFunc()
 
 	if s.leaseID != clientv3.NoLease {
@@ -150,12 +143,12 @@ func (s *kvstore) DeRegister() error {
 	return nil
 }
 
-func (s *kvstore) Close() {
+func (s *kvstore[T]) Close() {
 	// just close kvstore not etcd client
 	s.DeRegister()
 }
 
-func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
+func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	ch, err := s.client.KeepAlive(s.ctx, leaseID)
 	if err != nil {
 		return err
@@ -187,7 +180,7 @@ func (s *kvstore) keepAlive(leaseID clientv3.LeaseID) error {
 	return nil
 }
 
-func (s *kvstore) reRegister() {
+func (s *kvstore[T]) reRegister() {
 	s.leaseID = clientv3.NoLease
 	for {
 		select {
@@ -203,7 +196,7 @@ func (s *kvstore) reRegister() {
 	}
 }
 
-func (s *kvstore) revoke(leaseID clientv3.LeaseID) error {
+func (s *kvstore[T]) revoke(leaseID clientv3.LeaseID) error {
 	s.log.Debug("revoke lease", zap.Int64("lease", int64(leaseID)))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 	defer cancel()
