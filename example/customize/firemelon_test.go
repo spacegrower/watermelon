@@ -13,13 +13,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	firemelon "github.com/spacegrower/watermelon/example/custome"
+	firemelon "github.com/spacegrower/watermelon/example/customize"
 )
 
 func Init() {
 	// install logger
 	wlog.SetGlobalLogger(wlog.NewLogger(&wlog.Config{
-		Name:  "example/custome",
+		Name:  "example/customize",
 		Level: wlog.DebugLevel,
 	}))
 
