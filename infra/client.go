@@ -15,14 +15,14 @@ type ClientServiceNameGenerator interface {
 }
 
 type Client[T ClientServiceNameGenerator] struct {
-	CustomeMeta T
+	CustomizeMeta T
 }
 
 type COptions[T ClientServiceNameGenerator] struct {
-	CustomeMeta T
-	dialOptions []grpc.DialOption
-	resolver    resolver.Resolver
-	timeout     time.Duration
+	CustomizeMeta T
+	dialOptions   []grpc.DialOption
+	resolver      resolver.Resolver
+	timeout       time.Duration
 }
 
 type ClientOptions[T ClientServiceNameGenerator] func(c *COptions[T])
@@ -65,7 +65,7 @@ func NewClientConn[T ClientServiceNameGenerator](serviceName string, opts ...Cli
 	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
 	defer cancel()
 	cc, err := grpc.DialContext(ctx,
-		options.resolver.GenerateTarget(options.CustomeMeta.FullServiceName(serviceName)),
+		options.resolver.GenerateTarget(options.CustomizeMeta.FullServiceName(serviceName)),
 		options.dialOptions...)
 	if err != nil {
 		return nil, err

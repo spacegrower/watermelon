@@ -24,7 +24,7 @@ interface[T any] {
 `register.NodeMeta` 为框架能获取的一些关于节点的基本信息，用户可以根据需要自行通过 WithMeta 方法 merge 进 NodeMeta 中  
 `WithMeta(register.NodeMeta) T` 在框架调用服务前时被调用, watermelon.registry.Append(s.CustomInfo.WithMeta(metaData))
 
-假设我们当前场景需要按照组织及系统来划分不同的微服务，同时我们又要通过地区属性(region)来隔离不同网络环境下的服务，且希望每个服务拥有自己的一个权重属性，用来做负载均衡逻辑。  
+假设我们当前场景需要按照组织及系统来划分不同的微服务，同时我们又要通过地区属性(region)来隔离不同网络环境下的服务，且希望每个服务拥有自己的一个权重属性用来做负载均衡逻辑  
 那么我们的 NodeMeta 设计如下
 
 ```go
@@ -80,9 +80,9 @@ func (n NodeMeta) Value() string {
 
 当我们在设计 etcd key 时，是需要考虑到我们的节点如何被 resolver 发现，示例中我们设计的 key 为
 
-{组织 ID}/{系统名称}/{服务名称}/node/IP:端口  
-其中组织 ID 可以方便的使我们系统成为多租户系统，比如公司内部不同的部门进行隔离
+{组织 ID}/{系统名称}/{服务名称}/node/IP:端口
 
+其中组织 ID 可以方便的使我们系统成为多租户系统，比如公司内部不同的部门进行隔离  
 这样在我们定时任务中心需要发现某一系统的 agent 时，就可以使用
 
 ```shell

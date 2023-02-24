@@ -114,18 +114,18 @@ func (c *ClientConn[T]) WithGrpcDialOptions(opts ...grpc.DialOption) infra.Clien
 
 func (*ClientConn[T]) WithOrg(id string) infra.ClientOptions[etcdresolver.ResolveMeta] {
 	return func(c *infra.COptions[etcdresolver.ResolveMeta]) {
-		c.CustomeMeta.OrgID = id
+		c.CustomizeMeta.OrgID = id
 	}
 }
 
 func (*ClientConn[T]) WithNamespace(ns string) infra.ClientOptions[etcdresolver.ResolveMeta] {
 	return func(c *infra.COptions[etcdresolver.ResolveMeta]) {
-		c.CustomeMeta.Namespace = ns
+		c.CustomizeMeta.Namespace = ns
 	}
 }
 
 func (*ClientConn[T]) WithRegion(region string) infra.ClientOptions[etcdresolver.ResolveMeta] {
 	return func(c *infra.COptions[etcdresolver.ResolveMeta]) {
-		c.CustomeMeta.Region = region
+		c.CustomizeMeta.Region = region
 	}
 }
