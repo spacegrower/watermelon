@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"container/list"
 	"sync"
 	"testing"
 
@@ -38,4 +39,12 @@ func BenchmarkSyncMapLoad(b *testing.B) {
 	}
 }
 
-
+func TestNilImpl(t *testing.T) {
+	ctx := context.Background()
+	_, ok := GetFrom(ctx, "nonekey").(interface {
+		Next() *list.Element
+	})
+	if ok {
+		t.Fatal("really?")
+	}
+}
