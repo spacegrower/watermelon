@@ -33,16 +33,16 @@ func (r *RouterV1) Deep(ctx context.Context) error {
 }
 
 func next(ctx context.Context, ele *list.Element) error {
-	SetInto(ctx, definition.CurrentRouterKey{}, ele)
 	if ele == nil {
+		SetInto(ctx, definition.CurrentRouterKey{}, nil)
 		return handler(ctx)
 	}
 
 	if r, ok := ele.Value.(*router); ok {
+		SetInto(ctx, definition.CurrentRouterKey{}, ele)
 		if err := r.handler(ctx); err != nil {
 			return err
 		}
-
 		if currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(interface {
 			Next() *list.Element
 		}); ok {

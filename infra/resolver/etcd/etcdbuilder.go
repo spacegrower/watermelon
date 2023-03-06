@@ -124,7 +124,7 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 		r.client = manager.MustResolveEtcdClient()
 	}
 
-	service := filepath.ToSlash(filepath.Base(target.URL.Path))
+	service := filepath.Base(filepath.ToSlash(target.URL.Path))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	rr := &etcdResolver[T]{

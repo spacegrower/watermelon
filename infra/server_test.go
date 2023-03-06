@@ -14,6 +14,7 @@ import (
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
+	"github.com/spacegrower/watermelon/pkg/safe"
 	"google.golang.org/grpc"
 )
 
@@ -99,6 +100,54 @@ func Test_Server(t *testing.T) {
 	if str != "14test32" {
 		t.Fatal(str)
 	}
+	t.Log("successful")
+}
+
+func TestMiddleware(t *testing.T) {
+	srv := &Srv[etcd.NodeMeta]{
+		routers: make(map[string]middleware.Router),
+	}
+	srv.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
+		srv.mutex.Lock()
+		_, exist := srv.routers[key]
+		srv.mutex.Unlock()
+		return exist
+	}, func(key string, router middleware.Router) {
+		srv.mutex.Lock()
+		fmt.Println(key)
+		srv.routers[key] = router
+		srv.mutex.Unlock()
+	})
+	srv.Use(func(ctx context.Context) error {
+		var err error
+		safe.Run(func() {
+			err = middleware.Next(ctx)
+		})
+		return err
+	})
+
+	internal := srv.Group()
+	internal.Use(func(ctx context.Context) error {
+		// TODO check admin user
+		return nil
+	})
+
+	var testFunc grpc.UnaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
+		fmt.Println("handler")
+		return nil, nil
+	}
+	internal.Handler(testFunc)
+
+	ctx := wmctx.Wrap(context.Background())
+	preset.SetGrpcRequestTypeInto(ctx, definition.UnaryRequest)
+	preset.SetUnaryHandlerInto(ctx, testFunc)
+
+	for _, v := range srv.routers {
+		if err := v.Deep(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	t.Log("successful")
 }
 

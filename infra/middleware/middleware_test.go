@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/spacegrower/watermelon/infra/internal/context"
+	"github.com/spacegrower/watermelon/infra/internal/definition"
 )
 
 func BenchmarkSetInto(b *testing.B) {
@@ -41,10 +42,10 @@ func BenchmarkSyncMapLoad(b *testing.B) {
 
 func TestNilImpl(t *testing.T) {
 	ctx := context.Background()
-	_, ok := GetFrom(ctx, "nonekey").(interface {
+	SetInto(ctx, definition.CurrentRouterKey{}, nil)
+	if currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(interface {
 		Next() *list.Element
-	})
-	if ok {
-		t.Fatal("really?")
+	}); ok {
+		next(ctx, currentRouter.Next())
 	}
 }
