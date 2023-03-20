@@ -302,6 +302,7 @@ func (s *Srv[T]) serve() error {
 	}
 
 	graceful.RegisterPreShutDownHandlers(func() {
+		m.Close()
 		s.grpcServer.GracefulStop()
 		wlog.Info("grpc server shutdown now")
 	})
