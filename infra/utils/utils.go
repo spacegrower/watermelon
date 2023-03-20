@@ -51,10 +51,10 @@ func GetHostIP() (string, error) {
 }
 
 // NewContextWithSignal
-func NewContextWithSignal(signals ...os.Signal) context.Context {
+func NewContextWithSignal(ctx context.Context, signals ...os.Signal) context.Context {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, signals...)
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(ctx)
 
 	go func() {
 		<-ch

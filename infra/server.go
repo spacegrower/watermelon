@@ -48,6 +48,9 @@ type SrvInfo[T interface {
 type Srv[T interface {
 	WithMeta(register.NodeMeta) T
 }] struct {
+	ctx        context.Context
+	cancelFunc func()
+
 	*SrvInfo[T]
 	Port  string
 	mutex sync.Mutex
@@ -186,6 +189,8 @@ func NewServer[T interface {
 		routers: make(map[string]middleware.Router),
 	}
 
+	s.ctx, s.cancelFunc = context.WithCancel(context.Background())
+
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
 		s.mutex.Lock()
 		_, exist := s.routers[key]
@@ -252,7 +257,7 @@ func (s *Srv[T]) autoSetupAvailableMethods() {
 	}
 }
 
-func (s *Srv[T]) Serve() error {
+func (s *Srv[T]) serve() error {
 	s.autoSetupAvailableMethods()
 
 	l, err := net.Listen("tcp", ":"+s.Port)
@@ -306,16 +311,20 @@ func (s *Srv[T]) Serve() error {
 
 // RunUntil start server and shutdown until receive signals
 func (s *Srv[T]) RunUntil(signals ...os.Signal) {
-	ctx, cancel := context.WithCancel(utils.NewContextWithSignal(signals...))
+	ctx, cancel := context.WithCancel(utils.NewContextWithSignal(s.ctx, signals...))
 	go func() {
 		defer cancel()
-		if err := s.Serve(); err != nil {
+		if err := s.serve(); err != nil {
 			wlog.Error("watermelon server is shutdown", zap.Error(err))
 		}
 	}()
 
 	<-ctx.Done()
 	graceful.ShutDown()
+}
+
+func (s *Srv[T]) ShutDown() {
+	s.cancelFunc()
 }
 
 func (s *Srv[T]) registerServer(host string, port int) error {
