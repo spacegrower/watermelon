@@ -239,7 +239,6 @@ func NewServer[T interface {
 		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
 			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
 		}
-		s.address = addrAndPort[0]
 		s.port = addrAndPort[1]
 	}
 
