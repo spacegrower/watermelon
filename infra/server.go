@@ -20,7 +20,6 @@ import (
 
 	_ "github.com/spacegrower/watermelon/infra/codec"
 	"github.com/spacegrower/watermelon/infra/definition"
-	"github.com/spacegrower/watermelon/infra/graceful"
 	wctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
@@ -52,13 +51,16 @@ type Srv[T interface {
 	cancelFunc func()
 
 	*SrvInfo[T]
-	Port  string
+	port  string
+	addr  *net.TCPAddr
 	mutex sync.Mutex
 
 	grpcServer *grpc.Server
 
 	middleware.RouterGroup
 	routers map[string]middleware.Router
+
+	shutdownFunc []func()
 }
 
 type serverInfo struct {
@@ -69,6 +71,14 @@ type serverInfo struct {
 	address   string
 	port      string
 	tags      map[string]string
+}
+
+func (s *Srv[T]) Port() int {
+	return s.addr.Port
+}
+
+func (s *Srv[T]) Addr() string {
+	return s.addr.IP.String()
 }
 
 func (s *Srv[T]) interceptor() grpc.UnaryServerInterceptor {
@@ -229,7 +239,8 @@ func NewServer[T interface {
 		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
 			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
 		}
-		s.Port = addrAndPort[1]
+		s.address = addrAndPort[0]
+		s.port = addrAndPort[1]
 	}
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
@@ -260,7 +271,7 @@ func (s *Srv[T]) autoSetupAvailableMethods() {
 func (s *Srv[T]) serve() error {
 	s.autoSetupAvailableMethods()
 
-	l, err := net.Listen("tcp", ":"+s.Port)
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", s.address, s.port))
 	if err != nil {
 		return err
 	}
@@ -269,6 +280,8 @@ func (s *Srv[T]) serve() error {
 	if err != nil {
 		return err
 	}
+
+	s.addr = addr
 
 	m := cmux.New(l)
 
@@ -280,7 +293,7 @@ func (s *Srv[T]) serve() error {
 		httpListener := m.Match(cmux.HTTP1Fast())
 		go func() {
 			wlog.Info("start http serve")
-			graceful.RegisterPreShutDownHandlers(func() {
+			s.shutdownFunc = append(s.shutdownFunc, func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 				defer cancel()
 				s.httpServer.Shutdown(ctx)
@@ -297,11 +310,11 @@ func (s *Srv[T]) serve() error {
 	}()
 
 	time.Sleep(time.Millisecond * 100)
-	if err = s.registerServer(s.address, addr.Port); err != nil {
+	if err = s.registerServer(addr.IP.String(), addr.Port); err != nil {
 		panic(err)
 	}
 
-	graceful.RegisterPreShutDownHandlers(func() {
+	s.shutdownFunc = append(s.shutdownFunc, func() {
 		if s.registry != nil {
 			s.registry.Close()
 		}
@@ -309,6 +322,7 @@ func (s *Srv[T]) serve() error {
 		s.grpcServer.GracefulStop()
 		wlog.Info("grpc server shutdown now")
 	})
+
 	// Start serving!
 	return m.Serve()
 }
@@ -324,7 +338,9 @@ func (s *Srv[T]) RunUntil(signals ...os.Signal) {
 	}()
 
 	<-ctx.Done()
-	graceful.ShutDown()
+	for _, f := range s.shutdownFunc {
+		f()
+	}
 }
 
 func (s *Srv[T]) ShutDown() {

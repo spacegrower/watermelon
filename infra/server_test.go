@@ -7,13 +7,16 @@ import (
 	"net"
 	"reflect"
 	"runtime"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/spacegrower/watermelon/infra/definition"
 	wmctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
+	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/pkg/safe"
 	"google.golang.org/grpc"
 )
@@ -222,4 +225,26 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 	}
 
 	t.Log("successful")
+}
+
+func TestShutDown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ctx, _ = context.WithCancel(utils.NewContextWithSignal(ctx, syscall.SIGTERM, syscall.SIGKILL))
+
+	go func() {
+		time.Sleep(time.Second * 2)
+		cancel()
+	}()
+	timer := time.NewTimer(time.Second * 10)
+	for {
+		select {
+		case <-ctx.Done():
+			t.Log("success")
+			return
+		case <-timer.C:
+			t.Fatal("timer")
+			return
+		}
+	}
 }
