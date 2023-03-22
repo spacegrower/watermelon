@@ -352,11 +352,22 @@ func (s *Srv[T]) registerServer(host string, port int) error {
 		return nil
 	}
 
+	var (
+		err             error
+		registerAddress = host
+	)
+
+	if registerAddress == "::" {
+		if registerAddress, err = utils.GetHostIP(); err != nil {
+			registerAddress = s.address
+		}
+	}
+
 	metaData := register.NodeMeta{
 		// OrgID:        s.orgid,
 		// Region:       s.region,
 		// Namespace:    s.namespace,
-		Host: host,
+		Host: registerAddress,
 		Port: port,
 		// Weight:       100,
 		// Tags:         s.tags,
