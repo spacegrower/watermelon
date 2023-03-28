@@ -248,3 +248,17 @@ func TestShutDown(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalhost(t *testing.T) {
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", "0.0.0.0", "12345"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(addr.IP.String(), addr.Port)
+}

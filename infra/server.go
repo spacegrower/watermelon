@@ -364,13 +364,8 @@ func (s *Srv[T]) registerServer(host string, port int) error {
 	}
 
 	metaData := register.NodeMeta{
-		// OrgID:        s.orgid,
-		// Region:       s.region,
-		// Namespace:    s.namespace,
-		Host: registerAddress,
-		Port: port,
-		// Weight:       100,
-		// Tags:         s.tags,
+		Host:    registerAddress,
+		Port:    port,
 		Runtime: runtime.Version(),
 		Version: version.Version,
 	}
