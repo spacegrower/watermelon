@@ -10,13 +10,8 @@ type ServiceRegister[T any] interface {
 type NodeMetaKey struct{}
 
 type NodeMeta struct {
-	// Region       string            `json:"region"`
-	// OrgID        string            `json:"org_id"`
-	// Namespace    string            `json:"namespace"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	// Weight       int32             `json:"weight"`
-	// Tags         map[string]string `json:"tags"`
+	Host        string           `json:"host"`
+	Port        int              `json:"port"`
 	ServiceName string           `json:"service_name"`
 	GrpcMethods []GrpcMethodInfo `json:"methods"`
 	Runtime     string           `json:"runtime"`

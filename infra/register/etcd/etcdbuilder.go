@@ -64,15 +64,6 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 }
 
 func (s *kvstore[T]) Append(meta T) error {
-	// customize your register logic
-	// meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
-	// 	res, err := strconv.Atoi(val)
-	// 	if err != nil {
-	// 		return 0, err
-	// 	}
-	// 	return int32(res), nil
-	// })
-
 	s.metas = append(s.metas, meta)
 	return nil
 }

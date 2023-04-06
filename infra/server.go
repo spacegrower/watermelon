@@ -37,11 +37,18 @@ type ServerConfig struct {
 type SrvInfo[T interface {
 	WithMeta(register.NodeMeta) T
 }] struct {
-	address           string
+	address           []Address
 	CustomInfo        T
 	grpcServerOptions []grpc.ServerOption
 	httpServer        *http.Server
 	registry          register.ServiceRegister[T]
+}
+
+type Address struct {
+	ListenAddress   string // exp: 10.0.0.1 or 10.0.0.1:12345 or :12345 (used host-ip:12345)
+	RegisterAddress string // register-address will be equal listen-address when it is empty
+	address         string
+	port            int
 }
 
 type Srv[T interface {
@@ -52,7 +59,7 @@ type Srv[T interface {
 
 	*SrvInfo[T]
 	port  string
-	addr  *net.TCPAddr
+	addr  []*net.TCPAddr
 	mutex sync.Mutex
 
 	grpcServer *grpc.Server
@@ -161,9 +168,9 @@ type Option[T interface {
 
 func WithAddress[T interface {
 	WithMeta(register.NodeMeta) T
-}](addr string) Option[T] {
+}](addrs []Address) Option[T] {
 	return func(s *SrvInfo[T]) {
-		s.address = addr
+		s.address = addrs
 	}
 }
 
@@ -226,20 +233,24 @@ func NewServer[T interface {
 	// 	s.registry = etcd.MustSetupEtcdRegister()
 	// }
 
-	addrAndPort := strings.Split(s.address, ":")
-	s.address = addrAndPort[0]
-	if s.address == "" {
-		var err error
-		if s.address, err = utils.GetHostIP(); err != nil {
-			panic(err)
+	for i, address := range s.address {
+		addrAndPort := strings.Split(address.ListenAddress, ":")
+		s.address[i].address = addrAndPort[0]
+		if s.address[i].address == "" {
+			var err error
+			if s.address[i].address, err = utils.GetHostIP(); err != nil {
+				panic(err)
+			}
 		}
-	}
-	if len(addrAndPort) == 2 {
-		var err error
-		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
-			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
+		if len(addrAndPort) == 2 {
+			var err error
+			if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
+				panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
+			}
+			if s.address[i].port, err = strconv.Atoi(addrAndPort[1]); err != nil {
+				panic(fmt.Sprintf("address[%d].port can not parsed to int, %s", i, err.Error()))
+			}
 		}
-		s.port = addrAndPort[1]
 	}
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
@@ -268,38 +279,42 @@ func (s *Srv[T]) autoSetupAvailableMethods() {
 }
 
 func (s *Srv[T]) serve() error {
+	if s.grpcServer == nil || s.httpServer == nil {
+		wlog.Panic("no server set")
+	}
+
 	s.autoSetupAvailableMethods()
 
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", s.address, s.port))
-	if err != nil {
-		return err
-	}
+	for _, addr := range s.address {
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", addr.address, addr.port))
+		if err != nil {
+			return err
+		}
 
-	addr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
-	if err != nil {
-		return err
-	}
+		netAddr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
+		if err != nil {
+			return err
+		}
 
-	s.addr = addr
+		s.addr = append(s.addr, netAddr)
 
-	m := cmux.New(l)
-
-	if s.grpcServer == nil {
-		wlog.Panic("grpc server not set")
+		m := cmux.New(l)
+		if s.httpServer != nil {
+			httpListener := m.Match(cmux.HTTP1Fast())
+			go func(l net.Listener) {
+				wlog.Info("start http serve")
+				_ = s.httpServer.Serve(l)
+			}(httpListener)
+		}
 	}
 
 	if s.httpServer != nil {
-		httpListener := m.Match(cmux.HTTP1Fast())
-		go func() {
-			wlog.Info("start http serve")
-			s.shutdownFunc = append(s.shutdownFunc, func() {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-				defer cancel()
-				s.httpServer.Shutdown(ctx)
-				wlog.Info("http server shutdown now")
-			})
-			_ = s.httpServer.Serve(httpListener)
-		}()
+		s.shutdownFunc = append(s.shutdownFunc, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+			defer cancel()
+			s.httpServer.Shutdown(ctx)
+			wlog.Info("http server shutdown now")
+		})
 	}
 
 	grpcListener := m.Match(cmux.Any())
