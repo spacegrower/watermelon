@@ -49,6 +49,7 @@ func TestServer(t *testing.T) {
 		book.RegisterBookServer(srv, &BookSrv{})
 	}, newServer.WithSystem("BookSystem"),
 		newServer.WithRegion("local"),
+		newServer.WithAddress([]infra.Address{{ListenAddress: "0.0.0.0:10088", RegisterAddress: "192.168.2.202"}, {ListenAddress: "", RegisterAddress: ""}}),
 		newServer.WithServiceRegister(firemelon.MustSetupEtcdRegister()))
 
 	go srv.RunUntil(syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
