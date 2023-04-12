@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	liveTime int64 = 5
+	liveTime int64 = 10
 )
 
 func init() {
@@ -150,7 +150,7 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 			select {
 			case _, ok := <-ch:
 				if !ok {
-
+					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()))
 					select {
 					case <-s.ctx.Done():
 						s.Close()
