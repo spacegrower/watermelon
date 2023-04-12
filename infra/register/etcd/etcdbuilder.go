@@ -119,6 +119,7 @@ func (s *kvstore[T]) register() error {
 }
 
 func (s *kvstore[T]) DeRegister() error {
+	s.log.Warn("called deregister", zap.Any("service", s.metas))
 	defer s.cancelFunc()
 
 	if s.leaseID != clientv3.NoLease {
@@ -148,9 +149,9 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	go safe.Run(func() {
 		for {
 			select {
-			case _, ok := <-ch:
+			case result, ok := <-ch:
 				if !ok {
-					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()))
+					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
 					select {
 					case <-s.ctx.Done():
 						s.Close()
@@ -161,6 +162,7 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					s.reRegister()
 					return
 				}
+				s.log.Debug("keepalive once", zap.String("result", result.String()), zap.Int64("lease_id", int64(leaseID)))
 			case <-s.ctx.Done():
 				s.log.Warn("etcd-register is down, etcd context cancelled", zap.Any("service", s.metas), zap.Error(s.ctx.Err()))
 				s.Close()
