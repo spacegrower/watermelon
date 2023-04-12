@@ -162,6 +162,7 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					return
 				}
 			case <-s.ctx.Done():
+				s.log.Warn("etcd-register is down, etcd context cancelled", zap.Any("service", s.metas), zap.Error(s.ctx.Err()))
 				s.Close()
 				return
 			}
@@ -176,6 +177,7 @@ func (s *kvstore[T]) reRegister() {
 	for {
 		select {
 		case <-s.ctx.Done():
+			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
 		default:
 			if err := s.Register(); err != nil {
 				time.Sleep(time.Second)
