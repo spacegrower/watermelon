@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	liveTime int64 = 10
+	liveTime int64 = 12
 )
 
 func init() {
@@ -84,6 +84,7 @@ func (s *kvstore[T]) Register() error {
 			s.log.Error("failed to register server, retry after a period", zap.Error(err))
 			// retry with a period
 			time.Sleep(time.Second * time.Duration(liveTime))
+			s.init()
 			err = s.register()
 		}
 		if err != nil {
@@ -123,6 +124,7 @@ func (s *kvstore[T]) register() error {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
 		if err := s.setKeyWithTxn(registerKey, value, s.leaseID); err != nil {
+			s.leaseID = clientv3.NoLease
 			return err
 		}
 		s.log.Info("service registered successful",
@@ -131,6 +133,20 @@ func (s *kvstore[T]) register() error {
 	}
 
 	return nil
+}
+
+func (s *kvstore[T]) init() {
+	if s.leaseID != clientv3.NoLease {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+		if err := s.revoke(s.leaseID); err != nil {
+			s.log.Error("failed to revoke lease", zap.Error(err))
+			for _, v := range s.metas {
+				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
+				s.client.Delete(ctx, registerKey)
+			}
+		}
+	}
 }
 
 // 使用事务确保key是被第一次设置，如果之前已存在，则说明重复注册、错误注册或
@@ -161,17 +177,7 @@ func (s *kvstore[T]) DeRegister() error {
 	s.log.Warn("called deregister", zap.Any("service", s.metas))
 	defer s.cancelFunc()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-	if s.leaseID != clientv3.NoLease {
-		if err := s.revoke(s.leaseID); err != nil {
-			s.log.Error("failed to revoke lease", zap.Error(err))
-			for _, v := range s.metas {
-				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
-				s.client.Delete(ctx, registerKey)
-			}
-		}
-	}
+	s.init()
 	return nil
 }
 
