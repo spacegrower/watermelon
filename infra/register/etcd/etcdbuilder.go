@@ -2,6 +2,7 @@ package etcd
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -28,6 +29,10 @@ func init() {
 func GetETCDPrefixKey() string {
 	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
 }
+
+var (
+	ErrTxnPutFailure = errors.New("txn execute failure")
+)
 
 // func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
 // 	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
@@ -106,7 +111,7 @@ func (s *kvstore[T]) register() error {
 	for _, v := range s.metas {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
-		if _, err := s.client.Put(ctx, registerKey, value, clientv3.WithLease(s.leaseID)); err != nil {
+		if err := s.setKeyWithTxn(registerKey, value, s.leaseID); err != nil {
 			return err
 		}
 		s.log.Info("service registered successful",
@@ -117,7 +122,31 @@ func (s *kvstore[T]) register() error {
 	return nil
 }
 
+// 使用事务确保key是被第一次设置，如果之前已存在，则说明重复注册、错误注册或
+// 通过该注册器进行远程注册时网络原因导致重连时上一个进程(deregister)还没处理完
+func (s *kvstore[T]) setKeyWithTxn(k, v string, leaseID clientv3.LeaseID) error {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	defer cancel()
+
+	txn := s.client.Txn(ctx)
+	txn.If(clientv3.Compare(clientv3.CreateRevision(k), "=", 0)).
+		Then(clientv3.OpPut(k, v, clientv3.WithLease(leaseID)))
+	txnResp, err := txn.Commit()
+	if err != nil {
+		return err
+	}
+	if !txnResp.Succeeded {
+		s.log.Error("failed to register service key, txn execute failure")
+		return ErrTxnPutFailure
+	}
+	return nil
+}
+
 func (s *kvstore[T]) DeRegister() error {
+	if s.ctx.Err() != nil {
+		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
+		return nil
+	}
 	s.log.Warn("called deregister", zap.Any("service", s.metas))
 	defer s.cancelFunc()
 
