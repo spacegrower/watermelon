@@ -85,7 +85,6 @@ func (s *kvstore[T]) Register() error {
 	s.once.Do(func() {
 		graceful.RegisterPreShutDownHandlers(func() {
 			s.DeRegister()
-			s.client.Close()
 		})
 	})
 
@@ -122,15 +121,16 @@ func (s *kvstore[T]) DeRegister() error {
 	s.log.Warn("called deregister", zap.Any("service", s.metas))
 	defer s.cancelFunc()
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
 	if s.leaseID != clientv3.NoLease {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
-		for _, v := range s.metas {
-			registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
-			s.client.Delete(ctx, registerKey)
+		if err := s.revoke(s.leaseID); err != nil {
+			s.log.Error("failed to revoke lease", zap.Error(err))
+			for _, v := range s.metas {
+				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
+				s.client.Delete(ctx, registerKey)
+			}
 		}
-
-		return s.revoke(s.leaseID)
 	}
 	return nil
 }

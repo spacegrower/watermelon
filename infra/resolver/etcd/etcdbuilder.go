@@ -272,7 +272,7 @@ func (r *etcdResolver[T]) watch() {
 
 	for {
 		r.log.Debug("watch prefix " + r.prefixKey)
-		updates := r.client.Watch(context.Background(), r.prefixKey, opts...)
+		updates := r.client.Watch(r.ctx, r.prefixKey, opts...)
 		for {
 			ev, ok := <-updates
 			if !ok {
