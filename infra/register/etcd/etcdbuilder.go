@@ -75,10 +75,21 @@ func (s *kvstore[T]) Append(meta T) error {
 
 func (s *kvstore[T]) Register() error {
 	s.log.Debug("start register")
-	var err error
+	var (
+		err error
+	)
+
 	if err = s.register(); err != nil {
-		s.log.Error("failed to register server", zap.Error(err))
-		return err
+		if err == ErrTxnPutFailure {
+			s.log.Error("failed to register server, retry after a period", zap.Error(err))
+			// retry with a period
+			time.Sleep(time.Second * time.Duration(liveTime))
+			err = s.register()
+		}
+		if err != nil {
+			s.log.Error("failed to register server", zap.Error(err))
+			return err
+		}
 	}
 
 	if err = s.keepAlive(s.leaseID); err != nil {
