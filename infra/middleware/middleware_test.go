@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"container/list"
 	"sync"
 	"testing"
 
 	"github.com/spacegrower/watermelon/infra/internal/context"
+	"github.com/spacegrower/watermelon/infra/internal/definition"
 )
 
 func BenchmarkSetInto(b *testing.B) {
@@ -38,4 +40,12 @@ func BenchmarkSyncMapLoad(b *testing.B) {
 	}
 }
 
-
+func TestNilImpl(t *testing.T) {
+	ctx := context.Background()
+	SetInto(ctx, definition.CurrentRouterKey{}, nil)
+	if currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(interface {
+		Next() *list.Element
+	}); ok {
+		next(ctx, currentRouter.Next())
+	}
+}

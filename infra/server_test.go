@@ -7,13 +7,17 @@ import (
 	"net"
 	"reflect"
 	"runtime"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/spacegrower/watermelon/infra/definition"
 	wmctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
 	"github.com/spacegrower/watermelon/infra/middleware"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
+	"github.com/spacegrower/watermelon/infra/utils"
+	"github.com/spacegrower/watermelon/pkg/safe"
 	"google.golang.org/grpc"
 )
 
@@ -102,6 +106,54 @@ func Test_Server(t *testing.T) {
 	t.Log("successful")
 }
 
+func TestMiddleware(t *testing.T) {
+	srv := &Srv[etcd.NodeMeta]{
+		routers: make(map[string]middleware.Router),
+	}
+	srv.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
+		srv.mutex.Lock()
+		_, exist := srv.routers[key]
+		srv.mutex.Unlock()
+		return exist
+	}, func(key string, router middleware.Router) {
+		srv.mutex.Lock()
+		fmt.Println(key)
+		srv.routers[key] = router
+		srv.mutex.Unlock()
+	})
+	srv.Use(func(ctx context.Context) error {
+		var err error
+		safe.Run(func() {
+			err = middleware.Next(ctx)
+		})
+		return err
+	})
+
+	internal := srv.Group()
+	internal.Use(func(ctx context.Context) error {
+		// TODO check admin user
+		return nil
+	})
+
+	var testFunc grpc.UnaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
+		fmt.Println("handler")
+		return nil, nil
+	}
+	internal.Handler(testFunc)
+
+	ctx := wmctx.Wrap(context.Background())
+	preset.SetGrpcRequestTypeInto(ctx, definition.UnaryRequest)
+	preset.SetUnaryHandlerInto(ctx, testFunc)
+
+	for _, v := range srv.routers {
+		if err := v.Deep(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Log("successful")
+}
+
 func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 	s := &Srv[etcd.NodeMeta]{
 		routers: make(map[string]middleware.Router),
@@ -173,4 +225,40 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 	}
 
 	t.Log("successful")
+}
+
+func TestShutDown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ctx, _ = context.WithCancel(utils.NewContextWithSignal(ctx, syscall.SIGTERM, syscall.SIGKILL))
+
+	go func() {
+		time.Sleep(time.Second * 2)
+		cancel()
+	}()
+	timer := time.NewTimer(time.Second * 10)
+	for {
+		select {
+		case <-ctx.Done():
+			t.Log("success")
+			return
+		case <-timer.C:
+			t.Fatal("timer")
+			return
+		}
+	}
+}
+
+func TestLocalhost(t *testing.T) {
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", "0.0.0.0", "12345"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(addr.IP.String(), addr.Port)
 }

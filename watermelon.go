@@ -63,7 +63,7 @@ func (s *Server[T]) WithGrpcServerOptions(opts ...grpc.ServerOption) infra.Optio
 	return infra.WithGrpcServerOptions[T](opts...)
 }
 
-func (*Server[T]) WithAddress(addr string) infra.Option[T] {
+func (*Server[T]) WithAddress(addr []infra.Address) infra.Option[T] {
 	return infra.WithAddress[T](addr)
 }
 

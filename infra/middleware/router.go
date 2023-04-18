@@ -34,18 +34,19 @@ func (r *RouterV1) Deep(ctx context.Context) error {
 
 func next(ctx context.Context, ele *list.Element) error {
 	if ele == nil {
+		SetInto(ctx, definition.CurrentRouterKey{}, nil)
 		return handler(ctx)
 	}
 
 	if r, ok := ele.Value.(*router); ok {
-		SetInto(ctx, definition.RouterIndex{}, r.index)
 		SetInto(ctx, definition.CurrentRouterKey{}, ele)
 		if err := r.handler(ctx); err != nil {
 			return err
 		}
-
-		if GetFrom(ctx, definition.RouterIndex{}).(int) == r.index {
-			return next(ctx, ele.Next())
+		if currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(interface {
+			Next() *list.Element
+		}); ok {
+			return next(ctx, currentRouter.Next())
 		}
 	}
 	return nil

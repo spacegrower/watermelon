@@ -33,8 +33,9 @@ func GetFrom(c context.Context, key any) any {
 // Next a function to handle next middleware.
 // avoid using the same instance(context) for concurrent scenarios
 func Next(ctx context.Context) error {
-	currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(*list.Element)
-	if ok {
+	if currentRouter, ok := GetFrom(ctx, definition.CurrentRouterKey{}).(interface {
+		Next() *list.Element
+	}); ok {
 		return next(ctx, currentRouter.Next())
 	}
 	return nil
