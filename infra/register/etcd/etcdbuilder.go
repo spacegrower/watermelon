@@ -124,7 +124,7 @@ func (s *kvstore[T]) register() error {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
 		if err := s.setKeyWithTxn(registerKey, value, s.leaseID); err != nil {
-			s.leaseID = clientv3.NoLease
+			s.log.Error("failed to put register key", zap.Error(err), zap.String("key", registerKey))
 			return err
 		}
 		s.log.Info("service registered successful",
