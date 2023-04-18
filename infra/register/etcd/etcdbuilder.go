@@ -137,10 +137,10 @@ func (s *kvstore[T]) register() error {
 
 func (s *kvstore[T]) init() {
 	if s.leaseID != clientv3.NoLease {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-		defer cancel()
 		if err := s.revoke(s.leaseID); err != nil {
 			s.log.Error("failed to revoke lease", zap.Error(err))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
 			for _, v := range s.metas {
 				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 				s.client.Delete(ctx, registerKey)
