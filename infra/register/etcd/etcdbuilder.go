@@ -2,6 +2,7 @@ package etcd
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	liveTime int64 = 5
+	liveTime int64 = 12
 )
 
 func init() {
@@ -28,6 +29,10 @@ func init() {
 func GetETCDPrefixKey() string {
 	return utils.PathJoin(manager.ResolveKV(ide.ETCDPrefixKey{}).(string), "service")
 }
+
+var (
+	ErrTxnPutFailure = errors.New("txn execute failure")
+)
 
 // func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
 // 	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
@@ -64,25 +69,33 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 }
 
 func (s *kvstore[T]) Append(meta T) error {
-	// customize your register logic
-	// meta.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, meta.Weight, func(val string) (int32, error) {
-	// 	res, err := strconv.Atoi(val)
-	// 	if err != nil {
-	// 		return 0, err
-	// 	}
-	// 	return int32(res), nil
-	// })
-
+	for _, v := range s.metas {
+		if v.RegisterKey() == meta.RegisterKey() {
+			return nil
+		}
+	}
 	s.metas = append(s.metas, meta)
 	return nil
 }
 
 func (s *kvstore[T]) Register() error {
 	s.log.Debug("start register")
-	var err error
+	var (
+		err error
+	)
+
 	if err = s.register(); err != nil {
-		s.log.Error("failed to register server", zap.Error(err))
-		return err
+		if err == ErrTxnPutFailure {
+			s.log.Error("failed to register server, retry after a period", zap.Error(err))
+			// retry with a period
+			time.Sleep(time.Second * time.Duration(liveTime))
+			s.init()
+			err = s.register()
+		}
+		if err != nil {
+			s.log.Error("failed to register server", zap.Error(err))
+			return err
+		}
 	}
 
 	if err = s.keepAlive(s.leaseID); err != nil {
@@ -94,7 +107,6 @@ func (s *kvstore[T]) Register() error {
 	s.once.Do(func() {
 		graceful.RegisterPreShutDownHandlers(func() {
 			s.DeRegister()
-			s.client.Close()
 		})
 	})
 
@@ -116,7 +128,8 @@ func (s *kvstore[T]) register() error {
 	for _, v := range s.metas {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
-		if _, err := s.client.Put(ctx, registerKey, value, clientv3.WithLease(s.leaseID)); err != nil {
+		if err := s.setKeyWithTxn(registerKey, value, s.leaseID); err != nil {
+			s.log.Error("failed to put register key", zap.Error(err), zap.String("key", registerKey))
 			return err
 		}
 		s.log.Info("service registered successful",
@@ -127,19 +140,49 @@ func (s *kvstore[T]) register() error {
 	return nil
 }
 
+func (s *kvstore[T]) init() {
+	if s.leaseID != clientv3.NoLease {
+		if err := s.revoke(s.leaseID); err != nil {
+			s.log.Error("failed to revoke lease", zap.Error(err))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
+			for _, v := range s.metas {
+				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
+				s.client.Delete(ctx, registerKey)
+			}
+		}
+	}
+}
+
+// 使用事务确保key是被第一次设置，如果之前已存在，则说明重复注册、错误注册或
+// 通过该注册器进行远程注册时网络原因导致重连时上一个进程(deregister)还没处理完
+func (s *kvstore[T]) setKeyWithTxn(k, v string, leaseID clientv3.LeaseID) error {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	defer cancel()
+
+	txn := s.client.Txn(ctx)
+	txn.If(clientv3.Compare(clientv3.CreateRevision(k), "=", 0)).
+		Then(clientv3.OpPut(k, v, clientv3.WithLease(leaseID)))
+	txnResp, err := txn.Commit()
+	if err != nil {
+		return err
+	}
+	if !txnResp.Succeeded {
+		s.log.Error("failed to register service key, txn execute failure")
+		return ErrTxnPutFailure
+	}
+	return nil
+}
+
 func (s *kvstore[T]) DeRegister() error {
+	if s.ctx.Err() != nil {
+		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
+		return nil
+	}
+	s.log.Warn("called deregister", zap.Any("service", s.metas))
 	defer s.cancelFunc()
 
-	if s.leaseID != clientv3.NoLease {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
-		for _, v := range s.metas {
-			registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
-			s.client.Delete(ctx, registerKey)
-		}
-
-		return s.revoke(s.leaseID)
-	}
+	s.init()
 	return nil
 }
 
@@ -157,9 +200,9 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	go safe.Run(func() {
 		for {
 			select {
-			case _, ok := <-ch:
+			case result, ok := <-ch:
 				if !ok {
-
+					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
 					select {
 					case <-s.ctx.Done():
 						s.Close()
@@ -170,7 +213,9 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					s.reRegister()
 					return
 				}
+				s.log.Debug("keepalive once", zap.String("result", result.String()), zap.Int64("lease_id", int64(leaseID)))
 			case <-s.ctx.Done():
+				s.log.Warn("etcd-register is down, context cancelled", zap.Any("service", s.metas), zap.Error(s.ctx.Err()))
 				s.Close()
 				return
 			}
@@ -185,6 +230,7 @@ func (s *kvstore[T]) reRegister() {
 	for {
 		select {
 		case <-s.ctx.Done():
+			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
 		default:
 			if err := s.Register(); err != nil {
 				time.Sleep(time.Second)

@@ -1,7 +1,6 @@
 package firemelon
 
 import (
-	"fmt"
 	"net/url"
 
 	"github.com/spacegrower/watermelon/infra"
@@ -18,7 +17,6 @@ func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
 
 func DefaultAllowFunc(query url.Values, attr NodeMeta, addr *resolver.Address) bool {
 	region := query.Get("region")
-	fmt.Println("region", region)
 	if region == "" {
 		return true
 	}

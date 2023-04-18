@@ -37,11 +37,26 @@ type ServerConfig struct {
 type SrvInfo[T interface {
 	WithMeta(register.NodeMeta) T
 }] struct {
-	address           string
+	address           []Address
 	CustomInfo        T
 	grpcServerOptions []grpc.ServerOption
 	httpServer        *http.Server
 	registry          register.ServiceRegister[T]
+}
+
+type Address struct {
+	ListenAddress string // exp: 10.0.0.1 or 10.0.0.1:12345 or :12345 (used host-ip:12345)
+	// register-address will be equal listen-address when it is empty
+	//
+	// The registration address does not need to provide a port number.
+	// Even if it is provided, it will be replaced with the port number
+	// used by the listening address, unless a valid URL address is provided.
+	// If the provided URL address needs to automatically fill in the port
+	// number information used by the listener, you can use `{port}`` as a
+	// template for the port number filling.
+	RegisterAddress string
+	address         string
+	port            int
 }
 
 type Srv[T interface {
@@ -52,7 +67,7 @@ type Srv[T interface {
 
 	*SrvInfo[T]
 	port  string
-	addr  *net.TCPAddr
+	addr  []*net.TCPAddr
 	mutex sync.Mutex
 
 	grpcServer *grpc.Server
@@ -61,6 +76,7 @@ type Srv[T interface {
 	routers map[string]middleware.Router
 
 	shutdownFunc []func()
+	serverGroup  sync.WaitGroup
 }
 
 type serverInfo struct {
@@ -73,12 +89,9 @@ type serverInfo struct {
 	tags      map[string]string
 }
 
-func (s *Srv[T]) Port() int {
-	return s.addr.Port
-}
-
-func (s *Srv[T]) Addr() string {
-	return s.addr.IP.String()
+// Addrs It will always return nil before the service is started
+func (s *Srv[T]) Addrs() []*net.TCPAddr {
+	return s.addr
 }
 
 func (s *Srv[T]) interceptor() grpc.UnaryServerInterceptor {
@@ -153,17 +166,11 @@ type Option[T interface {
 	WithMeta(register.NodeMeta) T
 }] func(s *SrvInfo[T])
 
-// func (*Server) WithName(name string) Option {
-// 	return func(s *server) {
-// 		s.serverInfo.name = name
-// 	}
-// }
-
 func WithAddress[T interface {
 	WithMeta(register.NodeMeta) T
-}](addr string) Option[T] {
+}](addrs []Address) Option[T] {
 	return func(s *SrvInfo[T]) {
-		s.address = addr
+		s.address = addrs
 	}
 }
 
@@ -221,26 +228,12 @@ func NewServer[T interface {
 		opt(s.SrvInfo)
 	}
 
-	// 有些场景可能不需要服务注册
+	// This may not require service registration in some scenarios.
 	// if s.registry == nil {
 	// 	s.registry = etcd.MustSetupEtcdRegister()
 	// }
 
-	addrAndPort := strings.Split(s.address, ":")
-	s.address = addrAndPort[0]
-	if s.address == "" {
-		var err error
-		if s.address, err = utils.GetHostIP(); err != nil {
-			panic(err)
-		}
-	}
-	if len(addrAndPort) == 2 {
-		var err error
-		if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
-			panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
-		}
-		s.port = addrAndPort[1]
-	}
+	s.mustResolvServiceAddress()
 
 	s.grpcServer = grpc.NewServer(s.grpcServerOptions...)
 
@@ -252,6 +245,31 @@ func NewServer[T interface {
 	}
 
 	return s
+}
+
+func (s *Srv[T]) mustResolvServiceAddress() {
+	var err error
+	for i, address := range s.address {
+		addrAndPort := strings.Split(address.ListenAddress, ":")
+		s.address[i].address = addrAndPort[0]
+		if s.address[i].address == "" {
+			if s.address[i].address, err = utils.GetHostIP(); err != nil {
+				panic(err)
+			}
+		}
+		if len(addrAndPort) == 2 {
+			if _, err = strconv.Atoi(addrAndPort[1]); err != nil {
+				panic(fmt.Sprintf("wrong port %s, %s", addrAndPort[1], err.Error()))
+			}
+			if s.address[i].port, err = strconv.Atoi(addrAndPort[1]); err != nil {
+				panic(fmt.Sprintf("address[%d].port can not parsed to int, %s", i, err.Error()))
+			}
+		}
+	}
+
+	if len(s.address) == 0 {
+		s.address = append(s.address, Address{})
+	}
 }
 
 func (s *Srv[T]) autoSetupAvailableMethods() {
@@ -268,62 +286,107 @@ func (s *Srv[T]) autoSetupAvailableMethods() {
 }
 
 func (s *Srv[T]) serve() error {
+	if s.grpcServer == nil && s.httpServer == nil {
+		wlog.Panic("no server set")
+	}
+
 	s.autoSetupAvailableMethods()
 
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:%s", s.address, s.port))
-	if err != nil {
-		return err
+	duplicateFilter := make(map[string]struct{})
+	for i, addr := range s.address {
+		if len(s.address) > 1 && addr.ListenAddress == "" && addr.RegisterAddress == "" {
+			continue
+		}
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr.address, addr.port))
+		if err != nil {
+			return err
+		}
+
+		netAddr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
+		if err != nil {
+			return err
+		}
+
+		if _, exist := duplicateFilter[netAddr.IP.String()]; exist {
+			l.Close()
+			continue
+		}
+		duplicateFilter[netAddr.IP.String()] = struct{}{}
+
+		s.addr = append(s.addr, netAddr)
+
+		m := cmux.New(l)
+		if s.httpServer != nil {
+			httpListener := m.Match(cmux.HTTP1Fast())
+			go func(l net.Listener) {
+				wlog.Info("start http server on " + l.Addr().String())
+				_ = s.httpServer.Serve(l)
+			}(httpListener)
+		}
+
+		if s.grpcServer != nil {
+			grpcListener := m.Match(cmux.Any())
+			go func(l net.Listener) {
+				wlog.Info("start grpc server on " + l.Addr().String())
+				_ = s.grpcServer.Serve(l)
+			}(grpcListener)
+		}
+
+		s.serverGroup.Add(1)
+
+		s.shutdownFunc = append(s.shutdownFunc, func() {
+			m.Close()
+			s.serverGroup.Done()
+		})
+		go m.Serve()
+
+		registerPort := netAddr.Port
+		ra := strings.Split(addr.RegisterAddress, ":")
+		if len(ra) == 2 && ra[1] != "{port}" {
+			if registerPort, err = strconv.Atoi(ra[1]); err != nil {
+				panic(fmt.Sprintf("register address[%d].port can not parsed to int, %s", i, err.Error()))
+			}
+		}
+
+		if ra[0] == "" {
+			ra[0] = netAddr.IP.String()
+		}
+
+		if err = s.registerServer(ra[0], registerPort); err != nil {
+			panic(err)
+		}
 	}
-
-	addr, err := net.ResolveTCPAddr(l.Addr().Network(), l.Addr().String())
-	if err != nil {
-		return err
-	}
-
-	s.addr = addr
-
-	m := cmux.New(l)
-
-	if s.grpcServer == nil {
-		wlog.Panic("grpc server not set")
-	}
+	duplicateFilter = nil
 
 	if s.httpServer != nil {
-		httpListener := m.Match(cmux.HTTP1Fast())
-		go func() {
-			wlog.Info("start http serve")
-			s.shutdownFunc = append(s.shutdownFunc, func() {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-				defer cancel()
-				s.httpServer.Shutdown(ctx)
-				wlog.Info("http server shutdown now")
-			})
-			_ = s.httpServer.Serve(httpListener)
-		}()
+		s.shutdownFunc = append(s.shutdownFunc, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+			defer cancel()
+			s.httpServer.Shutdown(ctx)
+			wlog.Info("http server shutdown now")
+		})
 	}
 
-	grpcListener := m.Match(cmux.Any())
-	go func() {
-		wlog.Info("start grpc server")
-		_ = s.grpcServer.Serve(grpcListener)
-	}()
-
-	time.Sleep(time.Millisecond * 100)
-	if err = s.registerServer(addr.IP.String(), addr.Port); err != nil {
-		panic(err)
+	if s.grpcServer != nil {
+		s.shutdownFunc = append(s.shutdownFunc, func() {
+			if s.registry != nil {
+				s.registry.Close()
+			}
+			s.grpcServer.GracefulStop()
+			wlog.Info("grpc server shutdown now")
+		})
 	}
 
-	s.shutdownFunc = append(s.shutdownFunc, func() {
-		if s.registry != nil {
-			s.registry.Close()
+	if s.registry != nil {
+		time.Sleep(time.Millisecond * 100)
+		if err := s.registry.Register(); err != nil {
+			return err
 		}
-		m.Close()
-		s.grpcServer.GracefulStop()
-		wlog.Info("grpc server shutdown now")
-	})
+	}
 
 	// Start serving!
-	return m.Serve()
+	s.serverGroup.Wait()
+	return nil
 }
 
 // RunUntil start server and shutdown until receive signals
@@ -359,7 +422,7 @@ func (s *Srv[T]) registerServer(host string, port int) error {
 
 	if registerAddress == "::" {
 		if registerAddress, err = utils.GetHostIP(); err != nil {
-			registerAddress = s.address
+			return err
 		}
 	}
 
@@ -386,6 +449,5 @@ func (s *Srv[T]) registerServer(host string, port int) error {
 
 		s.registry.Append(s.CustomInfo.WithMeta(metaData))
 	}
-
-	return s.registry.Register()
+	return nil
 }

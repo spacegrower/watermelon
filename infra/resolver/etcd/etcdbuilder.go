@@ -139,7 +139,7 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 		allowFunc: r.allowFunc,
 	}
 
-	update := func() {
+	rr.updateFunc = func() {
 		var (
 			addrs []resolver.Address
 			err   error
@@ -162,9 +162,9 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 	}
 
 	go safe.Run(func() {
-		rr.watch(update)
+		rr.watch()
 	})
-	update()
+	rr.updateFunc()
 
 	return rr, nil
 }
@@ -180,12 +180,18 @@ type etcdResolver[T any] struct {
 	cc            resolver.ClientConn
 	opts          resolver.BuildOptions
 	log           wlog.Logger
+	updateFunc    func()
 	serviceConfig *wresolver.CustomizeServiceConfig
 
 	allowFunc AllowFuncType[T]
 }
 
-func (r *etcdResolver[T]) ResolveNow(_ resolver.ResolveNowOptions) {}
+func (r *etcdResolver[T]) ResolveNow(_ resolver.ResolveNowOptions) {
+	if r.ctx.Err() != nil {
+		r.ctx, r.cancel = context.WithCancel(context.Background())
+		r.watch()
+	}
+}
 func (r *etcdResolver[T]) Close() {
 	r.cancel()
 }
@@ -259,13 +265,14 @@ func parseNodeInfo[T any](key, val []byte, allowFunc func(attr T, addr *resolver
 	return addr, nil
 }
 
-func (r *etcdResolver[T]) watch(update func()) {
+func (r *etcdResolver[T]) watch() {
 	var opts []clientv3.OpOption
 	opts = append(opts, clientv3.WithPrefix())
+	defer r.cancel()
 
 	for {
 		r.log.Debug("watch prefix " + r.prefixKey)
-		updates := r.client.Watch(context.Background(), r.prefixKey, opts...)
+		updates := r.client.Watch(r.ctx, r.prefixKey, opts...)
 		for {
 			ev, ok := <-updates
 			if !ok {
@@ -279,7 +286,7 @@ func (r *etcdResolver[T]) watch(update func()) {
 				zap.Bool("canceled", ev.Canceled),
 				zap.Error(ev.Err()))
 
-			update()
+			r.updateFunc()
 
 			// some error occurred, re watch
 			if ev.Err() != nil {
@@ -287,7 +294,7 @@ func (r *etcdResolver[T]) watch(update func()) {
 					zap.Error(ev.Err()),
 					zap.Bool("canceled", ev.Canceled))
 
-				break
+				return
 			}
 		}
 	}
