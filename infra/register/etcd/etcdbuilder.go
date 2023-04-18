@@ -69,6 +69,11 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 }
 
 func (s *kvstore[T]) Append(meta T) error {
+	for _, v := range s.metas {
+		if v.RegisterKey() == meta.RegisterKey() {
+			return nil
+		}
+	}
 	s.metas = append(s.metas, meta)
 	return nil
 }
