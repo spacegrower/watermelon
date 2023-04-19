@@ -64,3 +64,6 @@ func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresol
 
 ```
 
+### Chat & QA & News
+- [Discord](https://discord.gg/BGJ6JZmFsR)
+
