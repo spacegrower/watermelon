@@ -136,7 +136,8 @@ func (s *kvstore[T]) register() error {
 	for _, v := range s.metas {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
-		if err := s.setKeyWithTxn(registerKey, value, s.leaseID); err != nil {
+
+		if err := s.putkey(registerKey, value); err != nil {
 			s.log.Error("failed to put register key", zap.Error(err), zap.String("key", registerKey))
 			return err
 		}
@@ -156,22 +157,14 @@ func (s *kvstore[T]) init() {
 	}
 }
 
-// 使用事务确保key是被第一次设置，如果之前已存在，则说明重复注册、错误注册或
-// 通过该注册器进行远程注册时网络原因导致重连时上一个进程(deregister)还没处理完
-func (s *kvstore[T]) setKeyWithTxn(k, v string, leaseID clientv3.LeaseID) error {
+func (s *kvstore[T]) putkey(k, v string) error {
+	if s.leaseID == clientv3.NoLease {
+		return errors.New("no lease")
+	}
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
 	defer cancel()
-
-	txn := s.client.Txn(ctx)
-	txn.If(clientv3.Compare(clientv3.CreateRevision(k), "=", 0)).
-		Then(clientv3.OpPut(k, v, clientv3.WithLease(leaseID)))
-	txnResp, err := txn.Commit()
-	if err != nil {
+	if _, err := s.client.Put(ctx, k, v, clientv3.WithLease(s.leaseID)); err != nil {
 		return err
-	}
-	if !txnResp.Succeeded {
-		s.log.Error("failed to register service key, txn execute failure")
-		return ErrTxnPutFailure
 	}
 	return nil
 }
