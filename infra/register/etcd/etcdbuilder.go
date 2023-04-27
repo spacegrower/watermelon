@@ -18,9 +18,16 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
-const (
+var (
 	liveTime int64 = 12
 )
+
+func SetKeepAlivePeriod(p int64) {
+	if p < 1 {
+		return
+	}
+	liveTime = p * 3
+}
 
 func init() {
 	manager.RegisterKV(ide.ETCDPrefixKey{}, "/watermelon")
@@ -65,6 +72,7 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 		cancelFunc: cancel,
 		client:     client,
 		log:        wlog.With(zap.String("component", "etcd-register")),
+		leaseID:    clientv3.NoLease,
 	}
 }
 
@@ -87,9 +95,9 @@ func (s *kvstore[T]) Register() error {
 	if err = s.register(); err != nil {
 		if err == ErrTxnPutFailure {
 			s.log.Error("failed to register server, retry after a period", zap.Error(err))
+			s.init()
 			// retry with a period
 			time.Sleep(time.Second * time.Duration(liveTime))
-			s.init()
 			err = s.register()
 		}
 		if err != nil {
@@ -144,12 +152,6 @@ func (s *kvstore[T]) init() {
 	if s.leaseID != clientv3.NoLease {
 		if err := s.revoke(s.leaseID); err != nil {
 			s.log.Error("failed to revoke lease", zap.Error(err))
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-			defer cancel()
-			for _, v := range s.metas {
-				registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
-				s.client.Delete(ctx, registerKey)
-			}
 		}
 	}
 }
@@ -200,7 +202,7 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	go safe.Run(func() {
 		for {
 			select {
-			case result, ok := <-ch:
+			case _, ok := <-ch:
 				if !ok {
 					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
 					select {
@@ -213,7 +215,6 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					s.reRegister()
 					return
 				}
-				s.log.Debug("keepalive once", zap.String("result", result.String()), zap.Int64("lease_id", int64(leaseID)))
 			case <-s.ctx.Done():
 				s.log.Warn("etcd-register is down, context cancelled", zap.Any("service", s.metas), zap.Error(s.ctx.Err()))
 				s.Close()
@@ -226,7 +227,7 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 }
 
 func (s *kvstore[T]) reRegister() {
-	s.leaseID = clientv3.NoLease
+	s.init()
 	for {
 		select {
 		case <-s.ctx.Done():
