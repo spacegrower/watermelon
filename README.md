@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-    Watermelon, A gRPC-service base tools
+    Watermelon, A gRPC-service base tool
 </p>
 
 #### An unprecedented way of organizing middleware
