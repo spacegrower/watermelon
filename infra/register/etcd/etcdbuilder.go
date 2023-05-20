@@ -66,7 +66,7 @@ func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
 }
 
 func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T] {
-	ctx, cancel := context.WithCancel(client.Ctx())
+	ctx, cancel := context.WithCancel(context.Background())
 	return &kvstore[T]{
 		ctx:        ctx,
 		cancelFunc: cancel,

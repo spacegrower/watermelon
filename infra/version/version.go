@@ -1,3 +1,3 @@
 package version
 
-const Version = "v0.1.1-alpha.19 (2023.05.16)"
+const Version = "v0.1.1-alpha.20 (2023.05.20)"
