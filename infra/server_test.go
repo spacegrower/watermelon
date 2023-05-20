@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"runtime"
 	"syscall"
@@ -20,6 +21,23 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 	"google.golang.org/grpc"
 )
+
+func TestClose(t *testing.T) {
+	out, _ := context.WithTimeout(context.Background(), time.Second*10)
+
+	ctx, _ := context.WithCancel(utils.NewContextWithSignal(out, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL))
+	ctx1, _ := context.WithCancel(utils.NewContextWithSignal(out, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL))
+	ctx2, _ := context.WithCancel(utils.NewContextWithSignal(out, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL))
+
+	p, _ := os.FindProcess(os.Getpid())
+	p.Signal(os.Interrupt)
+
+	<-ctx.Done()
+	<-ctx1.Done()
+	<-ctx2.Done()
+
+	t.Log("success", ctx.Err(), ctx1.Err(), ctx2.Err())
+}
 
 type TestForGetName struct{}
 
