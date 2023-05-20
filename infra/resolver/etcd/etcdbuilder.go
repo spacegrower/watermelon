@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
 
 	"github.com/spacegrower/watermelon/infra/internal/manager"
@@ -48,6 +49,20 @@ func (r ResolveMeta) FullServiceName(srvName string) string {
 		path.RawQuery = query.Encode()
 	}
 	return path.String()
+}
+
+func (r ResolveMeta) ProxyMetadata() metadata.MD {
+	md := metadata.New(map[string]string{})
+	if r.OrgID != "" {
+		md.Set("watermelon-org-id", r.OrgID)
+	}
+	if r.Region != "" {
+		md.Set("watermelon-region", r.Region)
+	}
+	if r.Namespace != "" {
+		md.Set("watermelon-system", r.Namespace)
+	}
+	return md
 }
 
 func init() {
