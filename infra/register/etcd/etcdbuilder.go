@@ -211,12 +211,12 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 }
 
 func (s *kvstore[T]) reRegister() {
-	s.init()
 	for {
 		select {
 		case <-s.ctx.Done():
 			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
 		default:
+			s.init()
 			if err := s.Register(); err != nil {
 				time.Sleep(time.Second)
 				continue
