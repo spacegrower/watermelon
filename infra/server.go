@@ -420,7 +420,7 @@ func (s *Srv[T]) ShutDown() {
 		s.closer.done()
 	}()
 
-	timer := time.NewTimer(time.Duration(defaultShutdownDelaySeconds))
+	timer := time.NewTimer(time.Duration(defaultShutdownDelaySeconds) * time.Second)
 	select {
 	case <-timer.C:
 		s.grpcServer.Stop()
