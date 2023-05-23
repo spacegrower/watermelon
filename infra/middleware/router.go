@@ -21,6 +21,7 @@ type Router interface {
 type RouterGroup interface {
 	Use(m ...Middleware)
 	Group() RouterGroup
+	GroupWithServiceName(name string) RouterGroup
 	Handler(methods ...interface{})
 }
 

@@ -30,6 +30,14 @@ func NewLogger(cfg *Config) *wrappedLogger {
 		// default: write to stdout
 		writer = zapcore.AddSync(os.Stdout)
 	} else {
+		if cfg.RotateConfig == nil {
+			cfg.RotateConfig = &RotateConfig{
+				Compress:   true,
+				MaxAge:     24,
+				MaxSize:    100,
+				MaxBackups: 1,
+			}
+		}
 		writer = zapcore.AddSync(&lumberjack.Logger{
 			Filename:   cfg.File,
 			MaxSize:    cfg.RotateConfig.MaxSize,
@@ -64,6 +72,9 @@ func NewLogger(cfg *Config) *wrappedLogger {
 	)
 
 	// init fields
+	if cfg.Name == "" {
+		cfg.Name = "watermelon"
+	}
 	initfields := zap.Fields(zap.String("service", cfg.Name), zap.String("runtime", runtime.Version()))
 	logger := zap.New(core, zap.AddStacktrace(zapcore.PanicLevel), initfields)
 

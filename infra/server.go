@@ -200,7 +200,7 @@ func WithGrpcServerOptions[T interface {
 	WithMeta(register.NodeMeta) T
 }](opts ...grpc.ServerOption) Option[T] {
 	return func(s *SrvInfo[T]) {
-		s.grpcServerOptions = opts
+		s.grpcServerOptions = append(s.grpcServerOptions, opts...)
 	}
 }
 

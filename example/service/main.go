@@ -61,14 +61,18 @@ func main() {
 		book.RegisterBookServer(srv, &BookSrv{})
 	}, newServer.WithNamespace("test"),
 		newServer.WithRegion("local"),
-		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()))
+		newServer.WithServiceRegister(etcd.MustSetupEtcdRegister()),
+		newServer.WithGrpcServerOptions(grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+			fmt.Println("called unary interceptor")
+			return handler(ctx, req)
+		}), grpc.UnknownServiceHandler(func(srv interface{}, stream grpc.ServerStream) error {
+			fmt.Println("unknown handle")
+			return nil
+		})))
 
 	a := srv.Group()
 	a.Use(func(ctx context.Context) error {
-		if err := middleware.Next(ctx); err != nil {
-			fmt.Println("return error", err)
-			return err
-		}
+		fmt.Println("called middleware")
 		if err := middleware.Next(ctx); err != nil {
 			fmt.Println("return error", err)
 			return err
