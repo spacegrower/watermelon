@@ -75,8 +75,14 @@ type Srv[T interface {
 	middleware.RouterGroup
 	routers map[string]middleware.Router
 
-	shutdownFunc []func()
-	serverGroup  sync.WaitGroup
+	closer      closer
+	serverGroup sync.WaitGroup
+}
+
+type closer struct {
+	shutdownFunc    []func()
+	shutdownContext context.Context
+	done            func()
 }
 
 type serverInfo struct {
@@ -194,7 +200,7 @@ func WithGrpcServerOptions[T interface {
 	WithMeta(register.NodeMeta) T
 }](opts ...grpc.ServerOption) Option[T] {
 	return func(s *SrvInfo[T]) {
-		s.grpcServerOptions = opts
+		s.grpcServerOptions = append(s.grpcServerOptions, opts...)
 	}
 }
 
@@ -207,6 +213,8 @@ func NewServer[T interface {
 	}
 
 	s.ctx, s.cancelFunc = context.WithCancel(context.Background())
+	s.closer = closer{}
+	s.closer.shutdownContext, s.closer.done = context.WithCancel(context.Background())
 
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
 		s.mutex.Lock()
@@ -334,7 +342,7 @@ func (s *Srv[T]) serve() error {
 
 		s.serverGroup.Add(1)
 
-		s.shutdownFunc = append(s.shutdownFunc, func() {
+		s.closer.shutdownFunc = append(s.closer.shutdownFunc, func() {
 			m.Close()
 			s.serverGroup.Done()
 		})
@@ -359,7 +367,7 @@ func (s *Srv[T]) serve() error {
 	duplicateFilter = nil
 
 	if s.httpServer != nil {
-		s.shutdownFunc = append(s.shutdownFunc, func() {
+		s.closer.shutdownFunc = append(s.closer.shutdownFunc, func() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
 			s.httpServer.Shutdown(ctx)
@@ -368,7 +376,7 @@ func (s *Srv[T]) serve() error {
 	}
 
 	if s.grpcServer != nil {
-		s.shutdownFunc = append(s.shutdownFunc, func() {
+		s.closer.shutdownFunc = append(s.closer.shutdownFunc, func() {
 			if s.registry != nil {
 				s.registry.Close()
 			}
@@ -400,13 +408,26 @@ func (s *Srv[T]) RunUntil(signals ...os.Signal) {
 	}()
 
 	<-ctx.Done()
-	for _, f := range s.shutdownFunc {
-		f()
-	}
+	s.ShutDown()
 }
 
 func (s *Srv[T]) ShutDown() {
 	s.cancelFunc()
+	go func() {
+		for _, f := range s.closer.shutdownFunc {
+			f()
+		}
+		s.closer.done()
+	}()
+
+	timer := time.NewTimer(time.Duration(defaultShutdownDelaySeconds) * time.Second)
+	select {
+	case <-timer.C:
+		s.grpcServer.Stop()
+	case <-s.closer.shutdownContext.Done():
+		timer.Stop()
+	}
+	timer = nil
 }
 
 func (s *Srv[T]) registerServer(host string, port int) error {

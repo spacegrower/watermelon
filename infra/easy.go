@@ -11,6 +11,14 @@ import (
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 )
 
+var (
+	defaultShutdownDelaySeconds = 15
+)
+
+func SetShutdownDelaySeconds(s int) {
+	defaultShutdownDelaySeconds = s
+}
+
 // RegisterETCDRegisterPrefixKey a function to change default register(etcd) prefix key
 func RegisterETCDRegisterPrefixKey(prefix string) {
 	if !strings.HasPrefix(prefix, "/") {
