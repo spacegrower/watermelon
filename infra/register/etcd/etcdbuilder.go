@@ -230,7 +230,10 @@ func (s *kvstore[T]) reRegister() {
 func (s *kvstore[T]) revoke(leaseID clientv3.LeaseID) error {
 	s.log.Debug("revoke lease", zap.Int64("lease", int64(leaseID)))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancel()
+	defer func() {
+		cancel()
+		s.leaseID = clientv3.NoLease
+	}()
 	if _, err := s.client.Revoke(ctx, leaseID); err != nil {
 		return err
 	}
