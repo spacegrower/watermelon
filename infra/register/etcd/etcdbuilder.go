@@ -8,6 +8,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/connectivity"
 
 	"github.com/spacegrower/watermelon/infra/graceful"
 	ide "github.com/spacegrower/watermelon/infra/internal/definition"
@@ -115,6 +116,10 @@ func (s *kvstore[T]) Register() error {
 func (s *kvstore[T]) register() error {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
 	defer cancel()
+	if s.client.ActiveConnection().GetState() == connectivity.Shutdown {
+		s.cancelFunc()
+		return errors.New("etcd client is shutdown")
+	}
 	if s.leaseID == clientv3.NoLease {
 		resp, err := s.client.Grant(ctx, liveTime)
 		if err != nil {
