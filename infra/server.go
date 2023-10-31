@@ -76,13 +76,14 @@ type Srv[T interface {
 	routers map[string]middleware.Router
 
 	closer      closer
-	serverGroup sync.WaitGroup
+	serverGroup *sync.WaitGroup
 }
 
 type closer struct {
 	shutdownFunc    []func()
 	shutdownContext context.Context
 	done            func()
+	doOnce          *sync.Once
 }
 
 type serverInfo struct {
@@ -208,12 +209,15 @@ func NewServer[T interface {
 	WithMeta(register.NodeMeta) T
 }](register func(srv *grpc.Server), opts ...Option[T]) *Srv[T] {
 	s := &Srv[T]{
-		SrvInfo: new(SrvInfo[T]),
-		routers: make(map[string]middleware.Router),
+		SrvInfo:     new(SrvInfo[T]),
+		routers:     make(map[string]middleware.Router),
+		serverGroup: &sync.WaitGroup{},
+		closer: closer{
+			doOnce: &sync.Once{},
+		},
 	}
 
 	s.ctx, s.cancelFunc = context.WithCancel(context.Background())
-	s.closer = closer{}
 	s.closer.shutdownContext, s.closer.done = context.WithCancel(context.Background())
 
 	s.RouterGroup = middleware.NewRouterGroup(func(key string) bool {
@@ -297,6 +301,8 @@ func (s *Srv[T]) serve() error {
 	if s.grpcServer == nil && s.httpServer == nil {
 		wlog.Panic("no server set")
 	}
+	// initialize the shutdown limiter, reset it on every startup
+	s.closer.doOnce = &sync.Once{}
 
 	s.autoSetupAvailableMethods()
 
@@ -412,22 +418,24 @@ func (s *Srv[T]) RunUntil(signals ...os.Signal) {
 }
 
 func (s *Srv[T]) ShutDown() {
-	s.cancelFunc()
-	go func() {
-		for _, f := range s.closer.shutdownFunc {
-			f()
-		}
-		s.closer.done()
-	}()
+	s.closer.doOnce.Do(func() {
+		s.cancelFunc()
+		go func() {
+			for _, f := range s.closer.shutdownFunc {
+				f()
+			}
+			s.closer.done()
+		}()
 
-	timer := time.NewTimer(time.Duration(defaultShutdownDelaySeconds) * time.Second)
-	select {
-	case <-timer.C:
-		s.grpcServer.Stop()
-	case <-s.closer.shutdownContext.Done():
-		timer.Stop()
-	}
-	timer = nil
+		timer := time.NewTimer(time.Duration(defaultShutdownDelaySeconds) * time.Second)
+		select {
+		case <-timer.C:
+			s.grpcServer.Stop()
+		case <-s.closer.shutdownContext.Done():
+			timer.Stop()
+		}
+		timer = nil
+	})
 }
 
 func (s *Srv[T]) registerServer(host string, port int) error {
