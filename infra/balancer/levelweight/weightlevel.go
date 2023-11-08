@@ -1,17 +1,25 @@
-package balancer
+package levelweight
 
 import (
 	"encoding/json"
+	"math"
 
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
 
+	wbalancer "github.com/spacegrower/watermelon/infra/balancer"
 	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/infra/wlog"
 )
 
-const WeightRobinName = "watermelon_weight_round_robin"
+const Name = "watermelon_level_weight_round"
+
+var threshold int
+
+func SetThreshold(i int) {
+	threshold = i
+}
 
 type WeightRobinBalancer[T interface {
 	Weigth() int32
@@ -34,9 +42,18 @@ type weightNodeStore struct {
 }
 
 type weigthNode struct {
-	Node
+	wbalancer.Node
 	Weight        int32
 	CurrentWeight int32
+}
+
+type CacheNodes[T interface {
+	Weigth() int32
+	Service() string
+	Methods() []string
+}] struct {
+	wbalancer.Node
+	meta T
 }
 
 type weightRobinPicker struct {
@@ -48,6 +65,10 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 		store: make(map[string]*weightNodeStore),
 	}
 
+	var (
+		totalWeight int32
+		cached      []CacheNodes[T]
+	)
 	for subConn, subConnInfo := range info.ReadySCs {
 		attr := subConnInfo.Address.BalancerAttributes.Value(register.NodeMetaKey{})
 		if attr == nil {
@@ -60,22 +81,56 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 			continue
 		}
 
-		for _, v := range meta.Methods() {
-			fullMethodName := utils.PathJoin(meta.Service(), v)
+		totalWeight += meta.Weigth()
+		cached = append(cached, CacheNodes[T]{
+			meta: meta,
+			Node: wbalancer.Node{
+				Address: subConnInfo.Address,
+				SubConn: subConn,
+			},
+		})
+	}
+
+	levelLine := totalWeight / int32(len(info.ReadySCs))
+	var (
+		topLevel []CacheNodes[T]
+	)
+
+	for _, v := range cached {
+		if v.meta.Weigth() >= levelLine {
+			topLevel = append(topLevel, v)
+		}
+	}
+
+	yardstick := threshold
+	if yardstick == 0 {
+		yardstick = int(math.Ceil(float64(len(cached)) / 2))
+	}
+
+	var joinToBalanceNodes []CacheNodes[T]
+	if len(topLevel) >= yardstick {
+		joinToBalanceNodes = topLevel
+	} else {
+		joinToBalanceNodes = cached
+	}
+
+	for _, node := range joinToBalanceNodes {
+		for _, v := range node.meta.Methods() {
+			fullMethodName := utils.PathJoin(node.meta.Service(), v)
 			if _, exist := p.store[fullMethodName]; !exist {
 				p.store[fullMethodName] = &weightNodeStore{
 					Method: v,
 				}
 			}
 			p.store[fullMethodName].Count += 1
-			p.store[fullMethodName].TotalWeight += meta.Weigth()
+			p.store[fullMethodName].TotalWeight += node.meta.Weigth()
 			p.store[fullMethodName].Nodes = append(p.store[fullMethodName].Nodes, &weigthNode{
-				Node: Node{
-					Address: subConnInfo.Address,
-					SubConn: subConn,
+				Node: wbalancer.Node{
+					Address: node.Address,
+					SubConn: node.SubConn,
 				},
-				Weight:        meta.Weigth(),
-				CurrentWeight: meta.Weigth(),
+				Weight:        node.meta.Weigth(),
+				CurrentWeight: node.meta.Weigth(),
 			})
 		}
 	}

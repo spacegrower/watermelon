@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/spacegrower/watermelon/infra/definition"
 	wmctx "github.com/spacegrower/watermelon/infra/internal/context"
 	"github.com/spacegrower/watermelon/infra/internal/preset"
@@ -19,7 +21,6 @@ import (
 	"github.com/spacegrower/watermelon/infra/register/etcd"
 	"github.com/spacegrower/watermelon/infra/utils"
 	"github.com/spacegrower/watermelon/pkg/safe"
-	"google.golang.org/grpc"
 )
 
 func TestClose(t *testing.T) {

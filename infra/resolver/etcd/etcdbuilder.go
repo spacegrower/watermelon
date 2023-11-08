@@ -60,7 +60,7 @@ func (r ResolveMeta) ProxyMetadata() metadata.MD {
 		md.Set("watermelon-region", r.Region)
 	}
 	if r.Namespace != "" {
-		md.Set("watermelon-system", r.Namespace)
+		md.Set("watermelon-namespace", r.Namespace)
 	}
 	return md
 }
@@ -84,6 +84,14 @@ func DefaultAllowFunc(query url.Values, attr etcd.NodeMeta, addr *resolver.Addre
 	}
 
 	if attr.Region != region {
+		if attr.Tags != nil {
+			endpoint := register.GetEndpointFromTags(attr.Tags)
+			if endpoint != "" {
+				addr.Addr = endpoint
+				addr.ServerName = endpoint
+				return true
+			}
+		}
 		proxy := manager.ResolveProxy(attr.Region)
 		if proxy == "" {
 			return false
