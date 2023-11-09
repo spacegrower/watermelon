@@ -22,7 +22,7 @@ func SetThreshold(i int) {
 }
 
 type WeightRobinBalancer[T interface {
-	Weigth() int32
+	Weight() int32
 	Service() string
 	Methods() []string
 }] struct {
@@ -48,7 +48,7 @@ type weigthNode struct {
 }
 
 type CacheNodes[T interface {
-	Weigth() int32
+	Weight() int32
 	Service() string
 	Methods() []string
 }] struct {
@@ -81,7 +81,7 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 			continue
 		}
 
-		totalWeight += meta.Weigth()
+		totalWeight += meta.Weight()
 		cached = append(cached, CacheNodes[T]{
 			meta: meta,
 			Node: wbalancer.Node{
@@ -97,7 +97,7 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 	)
 
 	for _, v := range cached {
-		if v.meta.Weigth() >= levelLine {
+		if v.meta.Weight() >= levelLine {
 			topLevel = append(topLevel, v)
 		}
 	}
@@ -123,14 +123,14 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 				}
 			}
 			p.store[fullMethodName].Count += 1
-			p.store[fullMethodName].TotalWeight += node.meta.Weigth()
+			p.store[fullMethodName].TotalWeight += node.meta.Weight()
 			p.store[fullMethodName].Nodes = append(p.store[fullMethodName].Nodes, &weigthNode{
 				Node: wbalancer.Node{
 					Address: node.Address,
 					SubConn: node.SubConn,
 				},
-				Weight:        node.meta.Weigth(),
-				CurrentWeight: node.meta.Weigth(),
+				Weight:        node.meta.Weight(),
+				CurrentWeight: node.meta.Weight(),
 			})
 		}
 	}
