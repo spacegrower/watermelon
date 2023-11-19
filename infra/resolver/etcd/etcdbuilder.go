@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	wb "github.com/spacegrower/watermelon/infra/balancer"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/attributes"
@@ -18,6 +17,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
 
+	wb "github.com/spacegrower/watermelon/infra/balancer"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
@@ -136,7 +136,7 @@ func (r *kvstore[T]) GenerateTarget(fullServiceName string) string {
 	return fmt.Sprintf("%s://%s/%s", ETCDResolverScheme, "", fullServiceName)
 }
 
-func (r *kvstore[T]) buildResolveKey(service string) string {
+func buildResolveKey(service string) string {
 	return filepath.ToSlash(filepath.Join(etcd.GetETCDPrefixKey(), service)) + "/"
 }
 
@@ -154,21 +154,15 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 		ctx:       ctx,
 		cancel:    cancel,
 		client:    r.client,
-		prefixKey: r.buildResolveKey(target.URL.Path),
+		prefixKey: buildResolveKey(target.URL.Path),
 		service:   service,
 		target:    target,
-		opts:      opts,
 		log:       wlog.With(zap.String("component", "etcd-resolver")),
 		allowFunc: r.allowFunc,
 	}
 
 	rr.updateFunc = func() {
-		var (
-			addrs []resolver.Address
-			err   error
-		)
-
-		addrs, err = rr.resolve()
+		addrs, err := rr.resolve()
 		if err != nil {
 			r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
 			addrs = []resolver.Address{
@@ -200,13 +194,16 @@ type etcdResolver[T any] struct {
 	prefixKey     string
 	service       string
 	target        resolver.Target
-	cc            resolver.ClientConn
-	opts          resolver.BuildOptions
 	log           wlog.Logger
 	updateFunc    func()
 	serviceConfig *wresolver.CustomizeServiceConfig
+	currentResult []resolver.Address
 
 	allowFunc AllowFuncType[T]
+}
+
+func (r *etcdResolver[T]) GetCurrentResults() []resolver.Address {
+	return r.currentResult
 }
 
 func (r *etcdResolver[T]) ResolveNow(_ resolver.ResolveNowOptions) {
@@ -321,4 +318,15 @@ func (r *etcdResolver[T]) watch() {
 			}
 		}
 	}
+}
+
+func GetBalancerAttributes[T any](addr resolver.Address) (T, bool) {
+	var nodeMeta T
+	attr := addr.BalancerAttributes.Value(register.NodeMetaKey{})
+	if attr == nil {
+		return nodeMeta, false
+
+	}
+	nodeMeta, ok := attr.(T)
+	return nodeMeta, ok
 }
