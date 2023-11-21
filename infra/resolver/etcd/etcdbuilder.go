@@ -2,11 +2,16 @@ package etcd
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -107,6 +112,8 @@ func MustSetupEtcdResolver() wresolver.Resolver {
 	return NewEtcdResolver(manager.MustResolveEtcdClient(), DefaultAllowFunc)
 }
 
+var registered = sync.Once{}
+
 func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresolver.Resolver {
 	ks := &kvstore[T]{
 		client:    client,
@@ -114,7 +121,9 @@ func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresol
 		allowFunc: af,
 	}
 
-	resolver.Register(ks)
+	registered.Do(func() {
+		resolver.Register(ks)
+	})
 	return ks
 }
 
@@ -147,43 +156,71 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 		r.client = manager.MustResolveEtcdClient()
 	}
 
-	service := filepath.Base(filepath.ToSlash(target.URL.Path))
-
 	ctx, cancel := context.WithCancel(context.Background())
-	rr := &etcdResolver[T]{
+	etcdResolver := &etcdResolver[T]{
 		ctx:       ctx,
 		cancel:    cancel,
 		client:    r.client,
 		prefixKey: buildResolveKey(target.URL.Path),
-		service:   service,
+		service:   filepath.Base(filepath.ToSlash(target.URL.Path)),
 		target:    target,
 		log:       wlog.With(zap.String("component", "etcd-resolver")),
 		allowFunc: r.allowFunc,
 	}
 
-	rr.updateFunc = func() {
-		addrs, err := rr.resolve()
+	var (
+		currentConfig    string
+		currentAddrsHash string
+		resolveLocker    sync.Mutex
+	)
+
+	etcdResolver.resolveNow = func() {
+		resolveLocker.Lock()
+		defer resolveLocker.Unlock()
+
+		addrs, err := etcdResolver.resolve()
 		if err != nil {
-			r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", service))
-			addrs = []resolver.Address{
-				wresolver.NilAddress,
-			}
+			r.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", etcdResolver.service))
+			return
 		}
 
-		if err := cc.UpdateState(resolver.State{
-			Addresses:     addrs,
-			ServiceConfig: cc.ParseServiceConfig(wresolver.ParseCustomizeToGrpcServiceConfig(rr.serviceConfig)),
-		}); err != nil {
-			r.log.Error("failed to update connect state", zap.Error(err))
+		sort.Slice(addrs, func(i, j int) bool {
+			return addrs[i].Addr > addrs[j].Addr
+		})
+
+		cfg := wresolver.ParseCustomizeToGrpcServiceConfig(etcdResolver.serviceConfig)
+		addrsHash := addressHash(addrs)
+		if cfg != currentConfig || addrsHash != currentAddrsHash {
+			if err := cc.UpdateState(resolver.State{
+				Addresses:     addrs,
+				ServiceConfig: cc.ParseServiceConfig(cfg),
+			}); err != nil {
+				r.log.Error("failed to update connect state", zap.Error(err))
+				return
+			}
+			currentConfig = cfg
+			currentAddrsHash = addrsHash
 		}
 	}
 
 	go safe.Run(func() {
-		rr.watch()
+		etcdResolver.startResolve()
 	})
-	rr.updateFunc()
+	etcdResolver.resolveNow()
 
-	return rr, nil
+	return etcdResolver, nil
+}
+
+func addressHash(addrs []resolver.Address) string {
+	s := strings.Builder{}
+	for _, v := range addrs {
+		s.WriteString(v.Addr)
+	}
+
+	h := md5.New()
+	h.Write([]byte(s.String()))
+	cipherStr := h.Sum(nil)
+	return hex.EncodeToString(cipherStr)
 }
 
 type etcdResolver[T any] struct {
@@ -195,7 +232,7 @@ type etcdResolver[T any] struct {
 	service       string
 	target        resolver.Target
 	log           wlog.Logger
-	updateFunc    func()
+	resolveNow    func()
 	serviceConfig *wresolver.CustomizeServiceConfig
 	currentResult []resolver.Address
 
@@ -209,11 +246,15 @@ func (r *etcdResolver[T]) GetCurrentResults() []resolver.Address {
 func (r *etcdResolver[T]) ResolveNow(_ resolver.ResolveNowOptions) {
 	if r.ctx.Err() != nil {
 		r.ctx, r.cancel = context.WithCancel(context.Background())
-		r.watch()
+		go safe.Run(func() {
+			r.startResolve()
+		})
 	}
+	r.resolveNow()
 }
 func (r *etcdResolver[T]) Close() {
 	r.cancel()
+	r.log.Debug("closed")
 }
 
 func (r *etcdResolver[T]) resolve() ([]resolver.Address, error) {
@@ -280,25 +321,31 @@ func parseNodeInfo[T any](key, val []byte, allowFunc func(attr T, addr *resolver
 		return addr, filterError
 	}
 
-	addr.BalancerAttributes = attributes.New(register.NodeMetaKey{}, attr)
+	if addr.Attributes == nil {
+		addr.Attributes = attributes.New(register.NodeMetaKey{}, attr)
+	} else {
+		addr.Attributes.WithValue(register.NodeMetaKey{}, attr)
+	}
 
 	return addr, nil
 }
 
-func (r *etcdResolver[T]) watch() {
+func (r *etcdResolver[T]) startResolve() {
 	var opts []clientv3.OpOption
 	opts = append(opts, clientv3.WithPrefix())
 	defer r.cancel()
 
-	for {
-		r.log.Debug("watch prefix " + r.prefixKey)
-		updates := r.client.Watch(r.ctx, r.prefixKey, opts...)
+	watchLogic := func() error {
+		watcher := clientv3.NewWatcher(r.client)
+		defer watcher.Close()
+
+		updates := watcher.Watch(r.ctx, r.prefixKey, opts...)
 		for {
 			ev, ok := <-updates
 			if !ok {
 				// watcher closed
 				r.log.Info("watch chan closed", zap.String("watch_key", r.prefixKey))
-				return
+				return errors.New("watch chan closed")
 			}
 
 			r.log.Debug("resolved event",
@@ -306,23 +353,29 @@ func (r *etcdResolver[T]) watch() {
 				zap.Bool("canceled", ev.Canceled),
 				zap.Error(ev.Err()))
 
-			r.updateFunc()
+			r.resolveNow()
 
 			// some error occurred, re watch
 			if ev.Err() != nil {
 				r.log.Error("watch with error",
 					zap.Error(ev.Err()),
 					zap.Bool("canceled", ev.Canceled))
-
-				return
+				time.Sleep(time.Second)
+				return nil
 			}
+		}
+	}
+
+	for {
+		if err := watchLogic(); err != nil {
+			return
 		}
 	}
 }
 
 func GetBalancerAttributes[T any](addr resolver.Address) (T, bool) {
 	var nodeMeta T
-	attr := addr.BalancerAttributes.Value(register.NodeMetaKey{})
+	attr := addr.Attributes.Value(register.NodeMetaKey{})
 	if attr == nil {
 		return nodeMeta, false
 

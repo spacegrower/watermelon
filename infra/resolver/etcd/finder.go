@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/resolver"
 
 	"github.com/spacegrower/watermelon/infra/internal/manager"
-	"github.com/spacegrower/watermelon/infra/register"
 	"github.com/spacegrower/watermelon/infra/register/etcd"
 	wresolver "github.com/spacegrower/watermelon/infra/resolver"
 	"github.com/spacegrower/watermelon/infra/wlog"
@@ -59,7 +58,7 @@ func NewAsyncFinder[T any](client *clientv3.Client, target resolver.Target, allo
 		allowFunc: allowFunc,
 	}
 
-	rr.updateFunc = func() {
+	rr.resolveNow = func() {
 		addrs, err := rr.resolve()
 		if err != nil {
 			rr.log.Error("failed to resolve service addresses", zap.Error(err), zap.String("service", rr.service))
@@ -69,26 +68,13 @@ func NewAsyncFinder[T any](client *clientv3.Client, target resolver.Target, allo
 	}
 
 	go safe.Run(func() {
-		rr.watch()
+		rr.startResolve()
 	})
-	rr.updateFunc()
+	rr.resolveNow()
 	return rr
 }
 
-type FindedResult[T any] struct {
-	addr string
-	attr T
-}
-
-func (f *FindedResult[T]) Attr() T {
-	return f.attr
-}
-
-func (f *FindedResult[T]) Address() string {
-	return f.addr
-}
-
-func (f *Finder[T]) FindAll(ctx context.Context, prefix string) (address []FindedResult[T], config *wresolver.CustomizeServiceConfig, err error) {
+func (f *Finder[T]) FindAll(ctx context.Context, prefix string) (address []resolver.Address, config *wresolver.CustomizeServiceConfig, err error) {
 	resp, err := f.client.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
 		f.logger.Error("failed to resolve service nodes", zap.Error(err))
@@ -108,10 +94,7 @@ func (f *Finder[T]) FindAll(ctx context.Context, prefix string) (address []Finde
 				return nil, nil, err
 			}
 
-			address = append(address, FindedResult[T]{
-				addr: addr.Addr,
-				attr: addr.BalancerAttributes.Value(register.NodeMetaKey{}).(T),
-			})
+			address = append(address, addr)
 		}
 	}
 	return
