@@ -17,8 +17,8 @@ func TestAsyncFinder(t *testing.T) {
 		Endpoints: []string{"localhost:2379"},
 	})
 
-	org := "spacegrower-test"
-	ns := "space"
+	org := "spacegrower"
+	ns := "meta"
 	serviceName := "space.Meta"
 
 	finder := etcd.MustSetupEtcdAsyncFinder(etcd.NewEtcdTarget(org, ns, serviceName),
@@ -31,12 +31,12 @@ func TestAsyncFinder(t *testing.T) {
 	addrs := finder.GetCurrentResults()
 
 	for _, v := range addrs {
-		nodeMeta, ok := etcd.GetBalancerAttributes[etcdregister.NodeMeta](v)
+		nodeMeta, ok := etcd.GetMetaAttributes[etcdregister.NodeMeta](v)
 		if !ok {
 			t.Fatal("failed to get nodeMeta")
 		}
 
 		t.Log("node", v.Addr)
-		t.Log("node weight", nodeMeta.Weight)
+		t.Log("node attr", nodeMeta)
 	}
 }

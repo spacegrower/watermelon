@@ -47,6 +47,7 @@ type AsyncFinder interface {
 
 func NewAsyncFinder[T any](client *clientv3.Client, target resolver.Target, allowFunc AllowFuncType[T]) AsyncFinder {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	rr := &etcdResolver[T]{
 		ctx:       ctx,
 		cancel:    cancel,

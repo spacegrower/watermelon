@@ -90,8 +90,7 @@ func DefaultAllowFunc(query url.Values, attr etcd.NodeMeta, addr *resolver.Addre
 
 	if attr.Region != region {
 		if attr.Tags != nil {
-			endpoint := register.GetEndpointFromTags(attr.Tags)
-			if endpoint != "" {
+			if endpoint := register.GetEndpointFromTags(attr.Tags); endpoint != "" {
 				addr.Addr = endpoint
 				addr.ServerName = endpoint
 				return true
@@ -214,7 +213,7 @@ func (r *kvstore[T]) Build(target resolver.Target, cc resolver.ClientConn, opts 
 func addressHash(addrs []resolver.Address) string {
 	s := strings.Builder{}
 	for _, v := range addrs {
-		s.WriteString(v.Addr)
+		s.WriteString(v.String())
 	}
 
 	h := md5.New()
@@ -284,10 +283,6 @@ func (r *etcdResolver[T]) resolve() ([]resolver.Address, error) {
 		}
 	}
 
-	if len(result) == 0 {
-		return []resolver.Address{wresolver.NilAddress}, nil
-	}
-
 	if r.serviceConfig == nil {
 		r.serviceConfig, _ = parseServiceConfig([]byte(wresolver.GetDefaultGrpcServiceConfig()))
 	}
@@ -296,6 +291,7 @@ func (r *etcdResolver[T]) resolve() ([]resolver.Address, error) {
 		return []resolver.Address{wresolver.Disabled}, nil
 	}
 
+	r.currentResult = result
 	return result, nil
 }
 
@@ -373,7 +369,7 @@ func (r *etcdResolver[T]) startResolve() {
 	}
 }
 
-func GetBalancerAttributes[T any](addr resolver.Address) (T, bool) {
+func GetMetaAttributes[T any](addr resolver.Address) (T, bool) {
 	var nodeMeta T
 	attr := addr.Attributes.Value(register.NodeMetaKey{})
 	if attr == nil {
