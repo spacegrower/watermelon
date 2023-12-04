@@ -31,6 +31,8 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
+type gRPCAttributeComparable interface{ Equal(any) bool }
+
 func DefaultResolveMeta() ResolveMeta {
 	return ResolveMeta{
 		OrgID:     "default",
@@ -80,7 +82,7 @@ var (
 	ETCDResolverScheme = "watermelonetcdv3"
 )
 
-type AllowFuncType[T any] func(query url.Values, attr T, addr *resolver.Address) bool
+type AllowFuncType[T gRPCAttributeComparable] func(query url.Values, attr T, addr *resolver.Address) bool
 
 func DefaultAllowFunc(query url.Values, attr etcd.NodeMeta, addr *resolver.Address) bool {
 	region := query.Get("region")
@@ -113,7 +115,7 @@ func MustSetupEtcdResolver() wresolver.Resolver {
 
 var registered = sync.Once{}
 
-func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresolver.Resolver {
+func NewEtcdResolver[T gRPCAttributeComparable](client *clientv3.Client, af AllowFuncType[T]) wresolver.Resolver {
 	ks := &kvstore[T]{
 		client:    client,
 		log:       wlog.With(zap.String("component", "etcd-resolver")),
@@ -126,7 +128,7 @@ func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresol
 	return ks
 }
 
-type kvstore[T any] struct {
+type kvstore[T gRPCAttributeComparable] struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	client    *clientv3.Client
@@ -222,7 +224,7 @@ func addressHash(addrs []resolver.Address) string {
 	return hex.EncodeToString(cipherStr)
 }
 
-type etcdResolver[T any] struct {
+type etcdResolver[T gRPCAttributeComparable] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 

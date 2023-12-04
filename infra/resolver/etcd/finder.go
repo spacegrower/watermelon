@@ -17,12 +17,14 @@ import (
 	"github.com/spacegrower/watermelon/pkg/safe"
 )
 
-type Finder[T any] struct {
+
+
+type Finder[T gRPCAttributeComparable] struct {
 	client *clientv3.Client
 	logger wlog.Logger
 }
 
-func NewFinder[T any](client *clientv3.Client) *Finder[T] {
+func NewFinder[T gRPCAttributeComparable](client *clientv3.Client) *Finder[T] {
 	return &Finder[T]{
 		client: client,
 		logger: wlog.With(zap.String("component", "finder")),
@@ -45,7 +47,7 @@ type AsyncFinder interface {
 	Close()
 }
 
-func NewAsyncFinder[T any](client *clientv3.Client, target resolver.Target, allowFunc AllowFuncType[T]) AsyncFinder {
+func NewAsyncFinder[T gRPCAttributeComparable](client *clientv3.Client, target resolver.Target, allowFunc AllowFuncType[T]) AsyncFinder {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	rr := &etcdResolver[T]{

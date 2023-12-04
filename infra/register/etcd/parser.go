@@ -26,6 +26,22 @@ func (n NodeMeta) WithMeta(meta register.NodeMeta) NodeMeta {
 	return n
 }
 
+func (n NodeMeta) Equal(o any) bool {
+	ov, ok := o.(NodeMeta)
+	if !ok {
+		return false
+	}
+
+	return n.ServiceName == ov.ServiceName &&
+		n.Host == ov.Host &&
+		n.Port == ov.Port &&
+		n.OrgID == ov.OrgID &&
+		n.Region == ov.Region &&
+		n.Namespace == ov.Namespace &&
+		n.Weight == ov.Weight &&
+		n.RegisterTime == ov.RegisterTime
+}
+
 func (n NodeMeta) Value() string {
 	// customize your register value logic
 	n.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, n.Weight, func(val string) (int32, error) {
