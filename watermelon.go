@@ -88,7 +88,7 @@ func (s *Server[T]) WithOrg(org string) infra.Option[etcd.NodeMeta] {
 
 func (s *Server[T]) WithWeight(weight int32) infra.Option[etcd.NodeMeta] {
 	return func(s *infra.SrvInfo[etcd.NodeMeta]) {
-		s.CustomInfo.Weight = weight
+		s.CustomInfo.NodeWeight = weight
 	}
 }
 
