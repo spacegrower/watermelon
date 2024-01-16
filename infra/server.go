@@ -412,6 +412,11 @@ func (s *Srv[T]) RunUntil(signals ...os.Signal) {
 }
 
 func (s *Srv[T]) ShutDown() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.ctx.Err() != nil {
+		return
+	}
 	s.cancelFunc()
 	go func() {
 		for _, f := range s.closer.shutdownFunc {

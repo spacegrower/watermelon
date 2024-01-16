@@ -201,7 +201,6 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 				}
 			case <-s.ctx.Done():
 				s.log.Warn("etcd-register is down, context cancelled", zap.Any("service", s.metas), zap.Error(s.ctx.Err()))
-				s.Close()
 				return
 			}
 		}

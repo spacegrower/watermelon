@@ -34,5 +34,5 @@ func DefaultAllowFunc(query url.Values, attr NodeMeta, addr *resolver.Address) b
 }
 
 func MustSetupEtcdResolver() wresolver.Resolver {
-	return eresolve.NewEtcdResolver(infra.ResolveEtcdClient(), DefaultAllowFunc)
+	return eresolve.NewEtcdResolver[NodeMeta](infra.ResolveEtcdClient(), DefaultAllowFunc)
 }
