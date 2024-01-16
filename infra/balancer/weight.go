@@ -14,7 +14,7 @@ import (
 const WeightRobinName = "watermelon_weight_round_robin"
 
 type WeightRobinBalancer[T interface {
-	Weigth() int32
+	Weight() int32
 	Service() string
 	Methods() []string
 }] struct {
@@ -28,12 +28,12 @@ func (w *WeightRobinBalancer[T]) Parser(meta string) T {
 
 type weightNodeStore struct {
 	Method      string
-	Nodes       []*weigthNode
+	Nodes       []*weightNode
 	Count       int
 	TotalWeight int32
 }
 
-type weigthNode struct {
+type weightNode struct {
 	Node
 	Weight        int32
 	CurrentWeight int32
@@ -68,14 +68,14 @@ func (b *WeightRobinBalancer[T]) Build(info base.PickerBuildInfo) balancer.Picke
 				}
 			}
 			p.store[fullMethodName].Count += 1
-			p.store[fullMethodName].TotalWeight += meta.Weigth()
-			p.store[fullMethodName].Nodes = append(p.store[fullMethodName].Nodes, &weigthNode{
+			p.store[fullMethodName].TotalWeight += meta.Weight()
+			p.store[fullMethodName].Nodes = append(p.store[fullMethodName].Nodes, &weightNode{
 				Node: Node{
 					Address: subConnInfo.Address,
 					SubConn: subConn,
 				},
-				Weight:        meta.Weigth(),
-				CurrentWeight: meta.Weigth(),
+				Weight:        meta.Weight(),
+				CurrentWeight: meta.Weight(),
 			})
 		}
 	}
