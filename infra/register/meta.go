@@ -4,7 +4,7 @@ type ServiceRegister[T any] interface {
 	Register() error
 	DeRegister() error
 	Close()
-	Append(T) error
+	SetMetas([]T)
 }
 
 type NodeMetaKey struct{}

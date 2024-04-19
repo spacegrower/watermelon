@@ -246,9 +246,7 @@ func Test_ServerMiddlewareErrorReturn(t *testing.T) {
 }
 
 func TestShutDown(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	ctx, _ = context.WithCancel(utils.NewContextWithSignal(ctx, syscall.SIGTERM, syscall.SIGKILL))
+	ctx, cancel := context.WithCancel(utils.NewContextWithSignal(context.Background(), syscall.SIGTERM, syscall.SIGKILL))
 
 	go func() {
 		time.Sleep(time.Second * 2)

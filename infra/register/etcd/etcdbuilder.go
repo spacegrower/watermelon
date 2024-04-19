@@ -77,14 +77,8 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 	}
 }
 
-func (s *kvstore[T]) Append(meta T) error {
-	for _, v := range s.metas {
-		if v.RegisterKey() == meta.RegisterKey() {
-			return nil
-		}
-	}
-	s.metas = append(s.metas, meta)
-	return nil
+func (s *kvstore[T]) SetMetas(metas []T) {
+	s.metas = metas
 }
 
 func (s *kvstore[T]) Register() error {
@@ -166,13 +160,6 @@ func (s *kvstore[T]) putkey(k, v string) error {
 }
 
 func (s *kvstore[T]) DeRegister() error {
-	if s.ctx.Err() != nil {
-		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
-		return nil
-	}
-	s.log.Warn("called deregister", zap.Any("service", s.metas))
-	defer s.cancelFunc()
-
 	s.init()
 	return nil
 }
@@ -180,6 +167,13 @@ func (s *kvstore[T]) DeRegister() error {
 func (s *kvstore[T]) Close() {
 	// just close kvstore not etcd client
 	s.DeRegister()
+
+	if s.ctx.Err() != nil {
+		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
+		return
+	}
+	s.log.Warn("called deregister", zap.Any("service", s.metas))
+	defer s.cancelFunc()
 }
 
 func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {

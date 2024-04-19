@@ -77,6 +77,8 @@ type Srv[T interface {
 
 	closer      closer
 	serverGroup *sync.WaitGroup
+
+	registerMeta []register.NodeMeta
 }
 
 type closer struct {
@@ -366,7 +368,7 @@ func (s *Srv[T]) serve() error {
 			ra[0] = netAddr.IP.String()
 		}
 
-		if err = s.registerServer(ra[0], registerPort); err != nil {
+		if err = s.registerServerMeta(ra[0], registerPort); err != nil {
 			panic(err)
 		}
 	}
@@ -393,9 +395,7 @@ func (s *Srv[T]) serve() error {
 
 	if s.registry != nil {
 		time.Sleep(time.Millisecond * 100)
-		if err := s.registry.Register(); err != nil {
-			return err
-		}
+		s.Register()
 	}
 
 	// Start serving!
@@ -438,7 +438,7 @@ func (s *Srv[T]) ShutDown() {
 	})
 }
 
-func (s *Srv[T]) registerServer(host string, port int) error {
+func (s *Srv[T]) registerServerMeta(host string, port int) error {
 	if s.registry == nil {
 		wlog.Warn("start server without register")
 		return nil
@@ -455,28 +455,47 @@ func (s *Srv[T]) registerServer(host string, port int) error {
 		}
 	}
 
-	metaData := register.NodeMeta{
-		Host:    registerAddress,
-		Port:    port,
-		Runtime: runtime.Version(),
-		Version: version.Version,
+	s.registerMeta = append(s.registerMeta, register.NodeMeta{
+		Host: registerAddress,
+		Port: port,
+	})
+
+	return nil
+}
+
+func (s *Srv[T]) Register() error {
+	if s.registry == nil {
+		return nil
 	}
 
-	for serviceName, serviceInfo := range s.grpcServer.GetServiceInfo() {
-		if strings.HasPrefix(serviceName, "grpc.reflection") {
-			// grpc reflection is a sidecar reflection methods, can not register
-			continue
-		}
-		metaData.ServiceName = serviceName
-		for _, method := range serviceInfo.Methods {
-			metaData.GrpcMethods = append(metaData.GrpcMethods, register.GrpcMethodInfo{
-				Name:           method.Name,
-				IsClientStream: method.IsClientStream,
-				IsServerStream: method.IsServerStream,
-			})
-		}
+	s.registry.Init()
+	s.registry.DeRegister()
 
-		s.registry.Append(s.CustomInfo.WithMeta(metaData))
+	for _, v := range s.registerMeta {
+		v.Runtime = runtime.Version()
+		v.Version = version.Version
+
+		for serviceName, serviceInfo := range s.grpcServer.GetServiceInfo() {
+			if strings.HasPrefix(serviceName, "grpc.reflection") {
+				// grpc reflection is a sidecar reflection methods, can not register
+				continue
+			}
+			v.ServiceName = serviceName
+			for _, method := range serviceInfo.Methods {
+				v.GrpcMethods = append(v.GrpcMethods, register.GrpcMethodInfo{
+					Name:           method.Name,
+					IsClientStream: method.IsClientStream,
+					IsServerStream: method.IsServerStream,
+				})
+			}
+
+			s.registry.Append(s.CustomInfo.WithMeta(v))
+		}
 	}
+
+	if err := s.registry.Register(); err != nil {
+		return err
+	}
+
 	return nil
 }
