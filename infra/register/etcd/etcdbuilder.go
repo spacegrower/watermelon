@@ -60,6 +60,7 @@ type kvstore[T Meta] struct {
 	log         wlog.Logger
 	leaseID     clientv3.LeaseID
 	changedChan chan struct{}
+	locker      *sync.Mutex
 }
 
 func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
@@ -75,11 +76,14 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 		client:     client,
 		log:        wlog.With(zap.String("component", "etcd-register")),
 		leaseID:    clientv3.NoLease,
+		locker:     &sync.Mutex{},
 	}
 }
 
 func (s *kvstore[T]) SetMetas(metas []T) {
+	s.locker.Lock()
 	s.metas = metas
+	s.locker.Unlock()
 }
 
 func (s *kvstore[T]) Register() error {
@@ -90,6 +94,8 @@ func (s *kvstore[T]) Register() error {
 
 	s.DeRegister()
 
+	s.locker.Lock()
+	defer s.locker.Unlock()
 	if err = s.register(); err != nil {
 		s.log.Error("failed to register server", zap.Error(err))
 		return err
@@ -143,7 +149,9 @@ func (s *kvstore[T]) register() error {
 }
 
 func (s *kvstore[T]) init() {
-	close(s.changedChan)
+	if s.changedChan != nil {
+		close(s.changedChan)
+	}
 	s.changedChan = make(chan struct{})
 	if s.leaseID != clientv3.NoLease {
 		if err := s.revoke(s.leaseID); err != nil {
@@ -165,6 +173,8 @@ func (s *kvstore[T]) putkey(k, v string) error {
 }
 
 func (s *kvstore[T]) DeRegister() error {
+	s.locker.Lock()
+	defer s.locker.Unlock()
 	s.init()
 	return nil
 }
@@ -224,7 +234,6 @@ func (s *kvstore[T]) reRegister() {
 		case <-s.ctx.Done():
 			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
 		default:
-			s.init()
 			if err := s.Register(); err != nil {
 				time.Sleep(time.Second)
 				continue
