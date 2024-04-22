@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-    Watermelon, A gRPC-service base tools
+    Watermelon, A gRPC-service base tool
 </p>
 
 #### An unprecedented way of organizing middleware
@@ -63,4 +63,7 @@ func NewEtcdRegister[T Meta](client *clientv3.Client) register.ServiceRegister[T
 func NewEtcdResolver[T any](client *clientv3.Client, af AllowFuncType[T]) wresolver.Resolver
 
 ```
+
+### Chat & QA & News
+- [Discord](https://discord.gg/BGJ6JZmFsR)
 

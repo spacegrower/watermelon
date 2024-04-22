@@ -88,12 +88,12 @@ func (s *Server[T]) WithOrg(org string) infra.Option[etcd.NodeMeta] {
 
 func (s *Server[T]) WithWeight(weight int32) infra.Option[etcd.NodeMeta] {
 	return func(s *infra.SrvInfo[etcd.NodeMeta]) {
-		s.CustomInfo.Weight = weight
+		s.CustomInfo.NodeWeight = weight
 	}
 }
 
 // ClientConn is a function to create grpc client connection
-type ClientConn[T infra.ClientServiceNameGenerator] func(serviceName string, opts ...infra.ClientOptions[T]) (*infra.ClientConn, error)
+type ClientConn[T infra.ClientServiceNameGenerator] func(serviceName string, opts ...infra.ClientOptions[T]) (*grpc.ClientConn, error)
 
 // NewClientConn is a function to create a cc instance
 func NewClientConn() ClientConn[etcdresolver.ResolveMeta] {

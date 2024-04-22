@@ -21,6 +21,18 @@ type NodeMeta struct {
 	register.NodeMeta
 }
 
+func (n NodeMeta) Equal(b any) bool {
+	cb, ok := b.(NodeMeta)
+	if !ok {
+		return false
+	}
+	return n.OrgID == cb.OrgID &&
+		n.Host == cb.Host &&
+		n.Port == cb.Port &&
+		n.Region == cb.Region &&
+		n.System == cb.System
+}
+
 func (n NodeMeta) WithMeta(meta register.NodeMeta) NodeMeta {
 	n.NodeMeta = meta
 	return n

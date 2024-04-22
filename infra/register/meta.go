@@ -35,3 +35,25 @@ type GrpcMethodInfo struct {
 // func (n NodeMeta) RegisterKey() string {
 // 	return fmt.Sprintf("%s/%s/%s/node/%s:%d", n.OrgID, n.Namespace, n.ServiceName, n.Host, n.Port)
 // }
+
+const (
+	WatermelonEndpointTag = "watermelon-endpoint"
+)
+
+func GetEndpointFromTags(tags map[string]string) string {
+	if tags == nil {
+		return ""
+	}
+
+	return tags[WatermelonEndpointTag]
+}
+
+func SetEndpointIntoTags(tags map[string]string, endpoint string) {
+	if tags != nil {
+		tags[WatermelonEndpointTag] = endpoint
+	}
+}
+
+func NewTags() map[string]string {
+	return make(map[string]string)
+}
