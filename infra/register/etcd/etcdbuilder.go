@@ -198,9 +198,10 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	}
 
 	go safe.Run(func() {
+		changed := s.changedChan
 		for {
 			select {
-			case <-s.changedChan:
+			case <-changed:
 				return
 			case _, ok := <-ch:
 				if !ok {
