@@ -2,7 +2,6 @@ package register
 
 type ServiceRegister[T any] interface {
 	Register() error
-	DeRegister() error
 	Close()
 	SetMetas([]T)
 }

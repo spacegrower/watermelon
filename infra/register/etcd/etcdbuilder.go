@@ -3,7 +3,6 @@ package etcd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/connectivity"
 
-	"github.com/spacegrower/watermelon/infra/graceful"
 	ide "github.com/spacegrower/watermelon/infra/internal/definition"
 	"github.com/spacegrower/watermelon/infra/internal/manager"
 	"github.com/spacegrower/watermelon/infra/register"
@@ -53,7 +51,6 @@ type Meta interface {
 }
 
 type kvstore[T Meta] struct {
-	once        sync.Once
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
 	client      *clientv3.Client
@@ -89,14 +86,15 @@ func (s *kvstore[T]) SetMetas(metas []T) {
 
 func (s *kvstore[T]) Register() error {
 	s.log.Debug("start register")
+	s.deRegister()
+
+	s.locker.Lock()
+	defer s.locker.Unlock()
+
 	var (
 		err error
 	)
 
-	s.DeRegister()
-
-	s.locker.Lock()
-	defer s.locker.Unlock()
 	if err = s.register(); err != nil {
 		s.log.Error("failed to register server", zap.Error(err))
 		return err
@@ -107,12 +105,6 @@ func (s *kvstore[T]) Register() error {
 			zap.Int64("lease_id", int64(s.leaseID)))
 		return err
 	}
-
-	s.once.Do(func() {
-		graceful.RegisterPreShutDownHandlers(func() {
-			s.DeRegister()
-		})
-	})
 
 	return nil
 }
@@ -151,7 +143,6 @@ func (s *kvstore[T]) register() error {
 
 func (s *kvstore[T]) init() {
 	if s.changedChan != nil {
-		fmt.Println("close changed Channel")
 		close(s.changedChan)
 	}
 	s.changedChan = make(chan struct{})
@@ -174,7 +165,7 @@ func (s *kvstore[T]) putkey(k, v string) error {
 	return nil
 }
 
-func (s *kvstore[T]) DeRegister() error {
+func (s *kvstore[T]) deRegister() error {
 	s.locker.Lock()
 	defer s.locker.Unlock()
 	s.init()
@@ -183,7 +174,7 @@ func (s *kvstore[T]) DeRegister() error {
 
 func (s *kvstore[T]) Close() {
 	// just close kvstore not etcd client
-	s.DeRegister()
+	s.deRegister()
 
 	if s.ctx.Err() != nil {
 		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
