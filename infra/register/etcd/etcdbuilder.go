@@ -52,13 +52,14 @@ type Meta interface {
 }
 
 type kvstore[T Meta] struct {
-	once       sync.Once
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	client     *clientv3.Client
-	metas      []T
-	log        wlog.Logger
-	leaseID    clientv3.LeaseID
+	once        sync.Once
+	ctx         context.Context
+	cancelFunc  context.CancelFunc
+	client      *clientv3.Client
+	metas       []T
+	log         wlog.Logger
+	leaseID     clientv3.LeaseID
+	changedChan chan struct{}
 }
 
 func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {
@@ -86,6 +87,8 @@ func (s *kvstore[T]) Register() error {
 	var (
 		err error
 	)
+
+	s.DeRegister()
 
 	if err = s.register(); err != nil {
 		s.log.Error("failed to register server", zap.Error(err))
@@ -140,6 +143,8 @@ func (s *kvstore[T]) register() error {
 }
 
 func (s *kvstore[T]) init() {
+	close(s.changedChan)
+	s.changedChan = make(chan struct{})
 	if s.leaseID != clientv3.NoLease {
 		if err := s.revoke(s.leaseID); err != nil {
 			s.log.Error("failed to revoke lease", zap.Error(err))
@@ -185,6 +190,8 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	go safe.Run(func() {
 		for {
 			select {
+			case <-s.changedChan:
+				return
 			case _, ok := <-ch:
 				if !ok {
 					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
@@ -210,6 +217,9 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 }
 
 func (s *kvstore[T]) reRegister() {
+	if len(s.metas) == 0 {
+		return
+	}
 	for {
 		select {
 		case <-s.ctx.Done():

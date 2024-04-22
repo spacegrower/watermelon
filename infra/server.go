@@ -468,9 +468,7 @@ func (s *Srv[T]) Register() error {
 		return nil
 	}
 
-	s.registry.Init()
-	s.registry.DeRegister()
-
+	var metas []T
 	for _, v := range s.registerMeta {
 		v.Runtime = runtime.Version()
 		v.Version = version.Version
@@ -489,9 +487,11 @@ func (s *Srv[T]) Register() error {
 				})
 			}
 
-			s.registry.Append(s.CustomInfo.WithMeta(v))
+			metas = append(metas, s.CustomInfo.WithMeta(v))
 		}
 	}
+
+	s.registry.SetMetas(metas)
 
 	if err := s.registry.Register(); err != nil {
 		return err
