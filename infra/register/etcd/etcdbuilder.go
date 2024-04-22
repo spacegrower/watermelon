@@ -3,6 +3,7 @@ package etcd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -150,6 +151,7 @@ func (s *kvstore[T]) register() error {
 
 func (s *kvstore[T]) init() {
 	if s.changedChan != nil {
+		fmt.Println("close changed Channel")
 		close(s.changedChan)
 	}
 	s.changedChan = make(chan struct{})
@@ -196,14 +198,17 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 	if err != nil {
 		return err
 	}
+	changed := s.changedChan
 
 	go safe.Run(func() {
-		changed := s.changedChan
 		for {
 			select {
 			case <-changed:
 				return
 			case _, ok := <-ch:
+				if changed != s.changedChan {
+					return
+				}
 				if !ok {
 					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
 					select {
@@ -255,7 +260,6 @@ func (s *kvstore[T]) revoke(leaseID clientv3.LeaseID) error {
 	if _, err := s.client.Revoke(ctx, leaseID); err != nil {
 		return err
 	}
-	s.leaseID = clientv3.NoLease
 
 	return nil
 }
