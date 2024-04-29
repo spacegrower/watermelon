@@ -39,15 +39,6 @@ func (n NodeMeta) WithMeta(meta register.NodeMeta) NodeMeta {
 }
 
 func (n NodeMeta) Value() string {
-	// customize your register value logic
-	n.Weight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, n.Weight, func(val string) (int32, error) {
-		res, err := strconv.Atoi(val)
-		if err != nil {
-			return 0, err
-		}
-		return int32(res), nil
-	})
-
 	n.RegisterTime = time.Now().Unix()
 
 	raw, _ := json.Marshal(n)

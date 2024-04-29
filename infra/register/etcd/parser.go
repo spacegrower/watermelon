@@ -3,12 +3,9 @@ package etcd
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
-	"github.com/spacegrower/watermelon/infra/definition"
 	"github.com/spacegrower/watermelon/infra/register"
-	"github.com/spacegrower/watermelon/infra/utils"
 )
 
 type NodeMeta struct {
@@ -43,15 +40,6 @@ func (n NodeMeta) Equal(o any) bool {
 }
 
 func (n NodeMeta) Value() string {
-	// customize your register value logic
-	n.NodeWeight = utils.GetEnvWithDefault(definition.NodeWeightENVKey, n.NodeWeight, func(val string) (int32, error) {
-		res, err := strconv.Atoi(val)
-		if err != nil {
-			return 0, err
-		}
-		return int32(res), nil
-	})
-
 	n.RegisterTime = time.Now().Unix()
 
 	raw, _ := json.Marshal(n)

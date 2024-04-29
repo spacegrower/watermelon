@@ -180,8 +180,8 @@ func (s *kvstore[T]) Close() {
 		s.log.Warn("ctx is already cancelled", zap.Error(s.ctx.Err()))
 		return
 	}
+	s.cancelFunc()
 	s.log.Warn("called deregister", zap.Any("service", s.metas))
-	defer s.cancelFunc()
 }
 
 func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
