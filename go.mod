@@ -3,6 +3,7 @@ module github.com/spacegrower/watermelon
 go 1.18
 
 require (
+	github.com/avast/retry-go/v4 v4.6.0
 	github.com/soheilhy/cmux v0.1.5
 	go.etcd.io/etcd/client/v3 v3.5.5
 	go.uber.org/zap v1.17.0

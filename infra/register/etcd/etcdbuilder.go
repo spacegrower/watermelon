@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/connectivity"
@@ -40,10 +41,6 @@ func GetETCDPrefixKey() string {
 var (
 	ErrTxnPutFailure = errors.New("txn execute failure")
 )
-
-// func generateServiceKey(orgid string, namespace, serviceName, nodeID string, port int) string {
-// 	return fmt.Sprintf("%s/%s/%s/%s/node/%s:%d", GetETCDPrefixKey(), orgid, namespace, serviceName, nodeID, port)
-// }
 
 type Meta interface {
 	RegisterKey() string
@@ -129,7 +126,17 @@ func (s *kvstore[T]) register() error {
 		registerKey := utils.PathJoin(GetETCDPrefixKey(), v.RegisterKey())
 		value := v.Value()
 
-		if err := s.putkey(registerKey, value); err != nil {
+		if err := retry.Do(
+			func() error {
+				return s.putkey(registerKey, value)
+			},
+			retry.Attempts(3),
+			retry.Delay(time.Second),
+			retry.OnRetry(func(n uint, err error) {
+				s.log.Warn("retrying registration", zap.Uint("attempt", n+1), zap.Error(err), zap.String("key", registerKey))
+			}),
+			retry.LastErrorOnly(true),
+		); err != nil {
 			s.log.Error("failed to put register key", zap.Error(err), zap.String("key", registerKey))
 			return err
 		}
