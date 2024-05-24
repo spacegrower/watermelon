@@ -20,7 +20,7 @@ type Router interface {
 
 type RouterGroup interface {
 	Use(m ...Middleware)
-	Group() RouterGroup
+	Group(name ...string) RouterGroup
 	GroupWithServiceName(name string) RouterGroup
 	Handler(methods ...interface{})
 }
@@ -137,8 +137,8 @@ func (r *routerGroup) GroupWithServiceName(name string) RouterGroup {
 	return n
 }
 
-func (r *routerGroup) Group() RouterGroup {
-	return r.GroupWithServiceName("")
+func (r *routerGroup) Group(name ...string) RouterGroup {
+	return r.GroupWithServiceName(strings.Join(name, "/"))
 }
 
 func (r *routerGroup) Handler(methods ...interface{}) {
