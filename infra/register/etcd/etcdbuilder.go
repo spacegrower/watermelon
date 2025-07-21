@@ -3,6 +3,7 @@ package etcd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -192,6 +193,11 @@ func (s *kvstore[T]) Close() {
 }
 
 func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
+	// 检查连接状态
+	if err := s.checkConnectionHealth(); err != nil {
+		return fmt.Errorf("connection health check failed: %w", err)
+	}
+
 	ch, err := s.client.KeepAlive(s.ctx, leaseID)
 	if err != nil {
 		return err
@@ -208,7 +214,16 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					return
 				}
 				if !ok {
-					s.log.Debug("failed to keepalive lease", zap.Any("service", s.metas), zap.Any("context", s.ctx.Err()), zap.Int64("lease_id", int64(leaseID)))
+					s.log.Warn("failed to keepalive lease, channel closed", 
+						zap.Any("service", s.metas), 
+						zap.Any("context", s.ctx.Err()), 
+						zap.Int64("lease_id", int64(leaseID)))
+					
+					// 检查连接状态
+					if connErr := s.checkConnectionHealth(); connErr != nil {
+						s.log.Error("etcd connection lost, attempting to reconnect", zap.Error(connErr))
+					}
+					
 					select {
 					case <-s.ctx.Done():
 						s.Close()
@@ -233,19 +248,59 @@ func (s *kvstore[T]) reRegister() {
 	if len(s.metas) == 0 {
 		return
 	}
+
+	backoff := time.Second
+	maxBackoff := time.Second * 30
+	
 	for {
 		select {
 		case <-s.ctx.Done():
 			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
+			return
 		default:
-			if err := s.Register(); err != nil {
-				time.Sleep(time.Second)
-				continue
+			// 检查连接健康状态
+			if connErr := s.checkConnectionHealth(); connErr != nil {
+				s.log.Warn("etcd connection unhealthy, waiting for recovery", 
+					zap.Error(connErr), 
+					zap.Duration("backoff", backoff))
+			} else {
+				// 连接正常，尝试重新注册
+				if err := s.Register(); err != nil {
+					s.log.Error("failed to re-register service", 
+						zap.Error(err), 
+						zap.Duration("backoff", backoff),
+						zap.Any("service", s.metas))
+				} else {
+					s.log.Info("successfully re-registered service", zap.Any("service", s.metas))
+					return
+				}
+			}
+			
+			// 指数退避
+			time.Sleep(backoff)
+			if backoff < maxBackoff {
+				backoff *= 2
 			}
 		}
-
-		return
 	}
+}
+
+func (s *kvstore[T]) checkConnectionHealth() error {
+	if s.client == nil {
+		return errors.New("etcd client is nil")
+	}
+	
+	state := s.client.ActiveConnection().GetState()
+	if state == connectivity.Shutdown {
+		return errors.New("etcd connection is shutdown")
+	}
+	
+	// 额外检查etcd健康状态
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+	
+	_, err := s.client.Get(ctx, "health-check")
+	return err
 }
 
 func (s *kvstore[T]) revoke(leaseID clientv3.LeaseID) error {
