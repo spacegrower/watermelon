@@ -3,12 +3,13 @@ package firemelon
 import (
 	"net/url"
 
+	"google.golang.org/grpc/resolver"
+
 	"github.com/spacegrower/watermelon/infra"
 	"github.com/spacegrower/watermelon/infra/register"
 	eregister "github.com/spacegrower/watermelon/infra/register/etcd"
 	wresolver "github.com/spacegrower/watermelon/infra/resolver"
 	eresolve "github.com/spacegrower/watermelon/infra/resolver/etcd"
-	"google.golang.org/grpc/resolver"
 )
 
 func MustSetupEtcdRegister() register.ServiceRegister[NodeMeta] {

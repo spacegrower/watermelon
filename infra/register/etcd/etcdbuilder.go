@@ -40,7 +40,8 @@ func GetETCDPrefixKey() string {
 }
 
 var (
-	ErrTxnPutFailure = errors.New("txn execute failure")
+	ErrTxnPutFailure      = errors.New("txn execute failure")
+	ErrEtcdClientShutdown = errors.New("etcd client is shutdown")
 )
 
 type Meta interface {
@@ -94,8 +95,33 @@ func (s *kvstore[T]) Register() error {
 	)
 
 	if err = s.register(); err != nil {
-		s.log.Error("failed to register server", zap.Error(err))
-		return err
+		// 如果是连接关闭错误，使用retry-go库进行重试
+		if errors.Is(err, ErrEtcdClientShutdown) {
+			s.log.Warn("etcd client is shutdown, attempting to reconnect and retry registration")
+
+			// 使用retry-go库进行重试
+			err = retry.Do(
+				func() error {
+					return s.register()
+				},
+				retry.Attempts(3),
+				retry.Delay(time.Second),
+				retry.MaxDelay(time.Second*5),
+				retry.OnRetry(func(n uint, err error) {
+					s.log.Warn("retrying registration", zap.Uint("attempt", n+1), zap.Error(err))
+				}),
+				retry.LastErrorOnly(true),
+			)
+
+			if err != nil {
+				s.log.Error("failed to register server after retries", zap.Error(err))
+				return err
+			}
+			s.log.Info("registration succeeded after retries")
+		} else {
+			s.log.Error("failed to register server", zap.Error(err))
+			return err
+		}
 	}
 
 	if err = s.keepAlive(s.leaseID); err != nil {
@@ -110,11 +136,13 @@ func (s *kvstore[T]) Register() error {
 func (s *kvstore[T]) register() error {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
 	defer cancel()
+
+	// 检查连接状态，如果连接已关闭，不直接取消上下文，而是返回错误让调用方决定是否重试
 	if s.client.ActiveConnection().GetState() == connectivity.Shutdown {
-		s.cancelFunc()
-		return errors.New("etcd client is shutdown")
+		return ErrEtcdClientShutdown
 	}
-	if s.leaseID == clientv3.NoLease {
+	// 检查lease是否有效，如果无效则重新生成
+	if s.leaseID == clientv3.NoLease || !s.isLeaseValid() {
 		resp, err := s.client.Grant(ctx, liveTime)
 		if err != nil {
 			return err
@@ -214,16 +242,11 @@ func (s *kvstore[T]) keepAlive(leaseID clientv3.LeaseID) error {
 					return
 				}
 				if !ok {
-					s.log.Warn("failed to keepalive lease, channel closed", 
-						zap.Any("service", s.metas), 
-						zap.Any("context", s.ctx.Err()), 
+					s.log.Warn("failed to keepalive lease, channel closed",
+						zap.Any("service", s.metas),
+						zap.Any("context", s.ctx.Err()),
 						zap.Int64("lease_id", int64(leaseID)))
-					
-					// 检查连接状态
-					if connErr := s.checkConnectionHealth(); connErr != nil {
-						s.log.Error("etcd connection lost, attempting to reconnect", zap.Error(connErr))
-					}
-					
+
 					select {
 					case <-s.ctx.Done():
 						s.Close()
@@ -249,39 +272,36 @@ func (s *kvstore[T]) reRegister() {
 		return
 	}
 
-	backoff := time.Second
-	maxBackoff := time.Second * 30
-	
-	for {
-		select {
-		case <-s.ctx.Done():
-			s.log.Warn("stop to register, context cancelled", zap.Error(s.ctx.Err()), zap.Any("service", s.metas))
-			return
-		default:
+	// 使用retry-go库进行重试
+	err := retry.Do(
+		func() error {
 			// 检查连接健康状态
 			if connErr := s.checkConnectionHealth(); connErr != nil {
-				s.log.Warn("etcd connection unhealthy, waiting for recovery", 
-					zap.Error(connErr), 
-					zap.Duration("backoff", backoff))
-			} else {
-				// 连接正常，尝试重新注册
-				if err := s.Register(); err != nil {
-					s.log.Error("failed to re-register service", 
-						zap.Error(err), 
-						zap.Duration("backoff", backoff),
-						zap.Any("service", s.metas))
-				} else {
-					s.log.Info("successfully re-registered service", zap.Any("service", s.metas))
-					return
-				}
+				return connErr
 			}
-			
-			// 指数退避
-			time.Sleep(backoff)
-			if backoff < maxBackoff {
-				backoff *= 2
-			}
+
+			// 连接正常，尝试重新注册
+			return s.Register()
+		},
+		retry.Attempts(0), // 无限重试直到成功或上下文取消
+		retry.Delay(time.Second),
+		retry.MaxDelay(time.Second*30),
+		retry.DelayType(retry.BackOffDelay),
+		retry.OnRetry(func(n uint, err error) {
+			s.log.Warn("retrying re-registration", zap.Uint("attempt", n+1), zap.Error(err), zap.Any("service", s.metas))
+		}),
+		retry.LastErrorOnly(true),
+		retry.Context(s.ctx), // 使用上下文控制取消
+	)
+
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			s.log.Warn("stop to register, context cancelled", zap.Error(err), zap.Any("service", s.metas))
+		} else {
+			s.log.Error("failed to re-register service after retries", zap.Error(err), zap.Any("service", s.metas))
 		}
+	} else {
+		s.log.Info("successfully re-registered service", zap.Any("service", s.metas))
 	}
 }
 
@@ -289,23 +309,42 @@ func (s *kvstore[T]) checkConnectionHealth() error {
 	if s.client == nil {
 		return errors.New("etcd client is nil")
 	}
-	
+
 	state := s.client.ActiveConnection().GetState()
 	if state == connectivity.Shutdown {
-		return errors.New("etcd connection is shutdown")
+		return ErrEtcdClientShutdown
 	}
-	
+
 	// 额外检查etcd健康状态
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	
+
 	_, err := s.client.Get(ctx, "health-check")
 	return err
 }
 
+// isLeaseValid 检查lease是否仍然有效
+func (s *kvstore[T]) isLeaseValid() bool {
+	if s.leaseID == clientv3.NoLease {
+		return false
+	}
+	
+	// 尝试获取lease信息来验证其有效性
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+	
+	resp, err := s.client.TimeToLive(ctx, s.leaseID)
+	if err != nil {
+		return false
+	}
+	
+	// 如果TTL为-1，表示lease不存在或已过期
+	return resp.TTL > 0
+}
+
 func (s *kvstore[T]) revoke(leaseID clientv3.LeaseID) error {
 	s.log.Debug("revoke lease", zap.Int64("lease", int64(leaseID)))
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer func() {
 		cancel()
 		s.leaseID = clientv3.NoLease
